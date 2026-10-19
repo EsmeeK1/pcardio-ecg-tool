@@ -1,0 +1,8 @@
+# Momenten (één tijdstip, geen duur) — één per regel.
+# Aanvullen mag; de volgorde hier is de volgorde van de knoppen in de app.
+Hoest
+Elektrode los
+Kabel geraakt
+Knop P-Cardio gedrukt
+Opstaan
+Gaan zitten

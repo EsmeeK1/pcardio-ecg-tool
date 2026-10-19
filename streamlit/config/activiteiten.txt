@@ -1,0 +1,20 @@
+# Activiteiten (perioden met een begin en een eind) — één per regel.
+# Aanvullen mag; de volgorde hier is de volgorde van de knoppen in de app.
+Zitten
+Staan
+Liggen op de rug
+Liggen op de zij
+Omdraaien (liggend)
+Praten
+Armen bewegen
+Hoesten
+Diep / onregelmatig ademen
+Bukken
+Lopen (rustig)
+Lopen (stevig)
+Traplopen
+Springen
+Joggen op de plaats
+Herstel (rustig zitten)
+Elektrode loshalen
+Tegen kabel tikken

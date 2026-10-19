@@ -1,0 +1,38 @@
+# config.toml — Streamlit leest dit bestand uit de map waarin je `streamlit run` start: start dus vanuit de
+# projectroot (`streamlit run streamlit/app.py`).
+
+[server]
+headless = true
+runOnSave = true
+fileWatcherType = "poll"
+# Alleen bereikbaar vanaf deze pc, niet vanaf andere apparaten op het netwerk (deelnemersgegevens).
+address = "localhost"
+
+[browser]
+# Geen gebruiksstatistieken naar Streamlit sturen.
+gatherUsageStats = false
+
+[theme]
+# AppBakkers-huisstijl. Kleuren en lettertypes uit de stijlgids; de rest staat in huisstijl() in streamlit/ui.py.
+base = "light"
+primaryColor = "#1E6F80"
+backgroundColor = "#F2FAFC"
+secondaryBackgroundColor = "#E0F4F9"
+textColor = "#1F2A30"
+borderColor = "#D6F0F6"
+font = "'DM Sans':https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap"
+headingFont = "'Bricolage Grotesque':https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@800&display=swap"
+headingFontWeights = 800
+baseRadius = "24px"
+buttonRadius = "full"
+# Meldingen: st.info in blauwgroen, st.warning ("let op") in licht oranje.
+blueColor = "#1E6F80"
+blueBackgroundColor = "#E0F4F9"
+blueTextColor = "#14525F"
+yellowColor = "#FF9806"
+yellowBackgroundColor = "#FFF3E0"
+yellowTextColor = "#8A4B00"
+orangeColor = "#FF9806"
+orangeBackgroundColor = "#FFF3E0"
+orangeTextColor = "#8A4B00"
+chartCategoricalColors = ["#1E6F80", "#FF9806", "#6EC6DA", "#14525F", "#9FDCEB", "#8A4B00"]

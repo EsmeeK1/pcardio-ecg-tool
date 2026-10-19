@@ -1,0 +1,16 @@
+# Streamlit-app
+streamlit
+plotly
+
+# Dataverwerking
+numpy
+pandas
+scipy
+pyarrow
+
+# ECG-signaalverwerking
+neurokit2
+matplotlib
+
+# P-Cardio dongle
+pyserial

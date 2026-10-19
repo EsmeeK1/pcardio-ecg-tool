@@ -1,0 +1,63 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Omgevingen
+.venv/
+venv/
+.env
+
+# Editors & OS
+.DS_Store
+Thumbs.db
+~$*
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Test & type checking
+.pytest_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data & modellen
+*.npy
+*.csv
+*.keras
+temp/
+models/
+
+# WFDB raw signal databases (PTB-XL, MIT-BIH, ...)
+*.dat
+*.hea
+*.atr
+*.xws
+*.at_
+*.at-
+
+# Raw/derived dataset folders per experiment (can contain full DB mirrors, GB-scale)
+experiments/*/data/
+
+# Large media files
+*.mp4
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
+
+# ECG-tool: deelnemers, opnames en annotaties (bevat namen)
+streamlit/data/
+graphify-out/
+streamlit/testdata/
+streamlit/PLib and resources
+# Ruwe logs van scripts/probe_device.py (bevatten id en MAC van de recorder)
+scripts/probe_logs/
