@@ -214,7 +214,7 @@ def test_testopname_voortgang_en_oefenopname() -> None:
     assert opnieuw.checkbox(key="stap_app").value is True
 
     oefen = [b for b in opnieuw.button if b.label.startswith("Maak oefenopname")]
-    if oefen:  # alleen als experiments/6_leads/data aanwezig is
+    if oefen:  # alleen als streamlit/data/test aanwezig is
         oefen[0].click().run()
         assert not opnieuw.exception, opnieuw.exception
         assert any(o.heeft_signalen and "Oefenopname" in o.info.notities for o in Opname.alle(DATA_ROOT))

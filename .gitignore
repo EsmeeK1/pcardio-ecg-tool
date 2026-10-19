@@ -16,35 +16,14 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Build
-dist/
-build/
-*.egg-info/
-
 # Test & type checking
 .pytest_cache/
 .mypy_cache/
 
-# Jupyter
-.ipynb_checkpoints/
-
-# Data & modellen
+# Data (P-Cardio-exports kunnen naar personen te herleiden zijn)
 *.npy
 *.csv
-*.keras
 temp/
-models/
-
-# WFDB raw signal databases (PTB-XL, MIT-BIH, ...)
-*.dat
-*.hea
-*.atr
-*.xws
-*.at_
-*.at-
-
-# Raw/derived dataset folders per experiment (can contain full DB mirrors, GB-scale)
-experiments/*/data/
 
 # Large media files
 *.mp4
@@ -54,8 +33,10 @@ experiments/*/data/
 *.mov
 *.wmv
 
-# ECG-tool: deelnemers, opnames en annotaties (bevat namen)
-streamlit/data/
+# ECG-tool: deelnemers (namen!), opnames en annotaties blijven lokaal, behalve de oefendata.
+streamlit/data/*
+!streamlit/data/test/
+!streamlit/data/test/*.csv
 graphify-out/
 streamlit/testdata/
 streamlit/PLib and resources

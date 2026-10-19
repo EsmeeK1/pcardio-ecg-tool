@@ -13,7 +13,8 @@ from kern.pcardio import combineer, lees_bestand
 from ui import link
 
 VOORTGANG = DATA_ROOT / "testopname_voortgang.json"
-OEFENDATA = Path(__file__).resolve().parents[2] / "experiments" / "6_leads" / "data"
+# Vaste map, ook als ECG_TOOL_DATA een andere datamap aanwijst (tests).
+OEFENDATA = Path(__file__).resolve().parents[1] / "data" / "test"
 
 
 @dataclass(frozen=True)
@@ -223,7 +224,7 @@ def maak_oefenopname() -> Opname:
     register = Deelnemers(DATA_ROOT)
     deelnemer = next((d for d in register.alle() if d.naam == "Oefen"), None)
     if deelnemer is None:
-        deelnemer = register.toevoegen("Oefen", None, "onbekend", False, "oefendata, januari 2026")
+        deelnemer = register.toevoegen("Oefen", None, "man", False, "hartaandoening (oefendata, volwassene)")
     bestaand = [o for o in Opname.alle(DATA_ROOT) if o.info.deelnemer_id == deelnemer.id and o.heeft_signalen]
     if bestaand:
         return bestaand[0]
@@ -260,7 +261,7 @@ with st.expander("Eerst oefenen zonder P-Cardio?"):
         "- **Live opname oefenen:** start gewoon een opname en klik wat rond. Er komt dan geen data bij, maar je "
         "leert de knoppen kennen. Een oefenopname kun je later laten staan; hij stoort niets.\n"
         "- **Bekijken oefenen:** maak een oefenopname met de P-Cardio-data van januari 2026 "
-        "(`experiments/6_leads/data/`). Daar zijn geen live annotaties bij; probeer zelf perioden toe te voegen op "
+        "van een volwassen man met een hartaandoening (`streamlit/data/test/`). Daar zijn geen live annotaties bij; probeer zelf perioden toe te voegen op "
         "**Bekijken & annoteren** (uitklapvak *Nieuwe annotatie in dit venster*).",
     )
     if not OEFENDATA.exists() or not list(OEFENDATA.glob("*.csv")):
