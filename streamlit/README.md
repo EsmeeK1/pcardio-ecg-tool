@@ -6,28 +6,24 @@ bij het [opnameprotocol](../docs/opnameprotocol-p-cardio.md).
 
 ## Opstarten
 
-Vereist Python 3.12 of nieuwer. Start **altijd vanuit de projectroot**: alleen dan leest Streamlit
-`.streamlit/config.toml` (app alleen bereikbaar vanaf deze pc, geen gebruiksstatistieken naar Streamlit). Start
-je vanuit een andere map, dan toont de app een waarschuwing.
-
-In PowerShell (Windows-venv `venv\`):
+Installeren (Python 3.12.x, `init_repo.cmd`, `.venv`) staat stap voor stap in de
+[README in de projectroot](../README.md). Daarna, vanuit de projectroot:
 
 ```powershell
-venv\Scripts\Activate.ps1
-pip install -r requirements.txt    # eenmalig; de app zelf heeft streamlit>=1.52, pandas, numpy, pyarrow en plotly nodig
+.venv\Scripts\Activate.ps1
 streamlit run streamlit\app.py
 ```
 
-In WSL gebruik je een Linux-venv (`source <venv>/bin/activate`) en `streamlit run streamlit/app.py`. Een
-Windows-venv werkt niet in WSL en andersom.
-
 De app opent op <http://localhost:8501>. Stoppen: `Ctrl+C` in de terminal.
+
+In WSL gebruik je een eigen Linux-venv (`source <venv>/bin/activate`) en `streamlit run streamlit/app.py`. Een
+Windows-venv werkt niet in WSL en andersom.
 
 ## Werkwijze
 
 | Pagina | Wat je er doet |
 |---|---|
-| **Test-opname stap voor stap** | Een korte eerste opname (± 8 minuten opnemen) met afvinkbare stappen, van voorbereiden tot bekijken. Ook: een oefenopname maken met de data van januari 2026 (`experiments/6_leads/data/`). |
+| **Test-opname stap voor stap** | Een korte eerste opname (± 8 minuten opnemen) met afvinkbare stappen, van voorbereiden tot bekijken. Ook: een oefenopname maken met de data van januari 2026 (`data/test/`, zie hieronder). |
 | **Handleiding** | Begrippen (periode, moment, sync-sprong, klokcorrectie, tijdbasis), uitleg per pagina, problemen oplossen, bestanden. |
 | **Deelnemers** | Persoon vastleggen: voornaam of patiënt-ID, leeftijd, geslacht, hartdecompensatie ja/nee, andere bekende aandoening. Krijgt een ID (`D001`, …) — die zet je ook in het `User Id`-veld van de P-Cardio. |
 | **Live opname** | Tijdens de opname: **sync-sprong**, **perioden** (activiteit met begin en eind) en **momenten** (één tijdstip, bijv. hoest) loggen met de pc-klok. Een nieuwe periode stopt de vorige. Fout geklikt? Pas het aan of verwijder het in het logboek onderaan. |
@@ -38,11 +34,10 @@ De app opent op <http://localhost:8501>. Stoppen: `Ctrl+C` in de terminal.
 
 ### Live opname
 
-1. Zet vlak vóór de opname de tijd van de P-Cardio gelijk **met de pc waarop de app draait**.
-2. Start de opname en klik als eerste op **Sync-sprong**: tel samen af, de deelnemer springt één keer, en jij
+1. Start de opname en klik als eerste op **Sync-sprong**: tel samen af, de deelnemer springt één keer, en jij
    klikt op het moment van landen. Doe dat liefst ook aan het eind.
-3. Klik op een activiteit als die begint, en op **Stop periode** als de rustpauze begint.
-4. Klik op een moment (of **Markeer nu**) zodra er iets gebeurt; de omschrijving kun je achteraf aanpassen.
+2. Klik op een activiteit als die begint, en op **Stop periode** als de rustpauze begint.
+3. Klik op een moment (of **Markeer nu**) zodra er iets gebeurt; de omschrijving kun je achteraf aanpassen.
 
 Elke klik wordt direct opgeslagen. Browser dicht of app herstart? Kies **Opname hervatten**.
 
@@ -96,12 +91,15 @@ streamlit/
 │   ├── verwerking.py      # 6 leads, weergavefilter, sync-sprong zoeken
 │   ├── plots.py           # plotly-figuren
 │   └── export.py          # gecombineerde export
+├── assets/                # logo en foto elektrodenplaatsing
+├── handleiding.pdf        # handleiding voor deelnemers
 ├── config/
 │   ├── activiteiten.txt   # knoppen voor perioden (één per regel, aan te vullen)
 │   └── momenten.txt       # knoppen voor momenten
 ├── tests/                 # fixtures/probe_dongle.log: ruwe regels van echte hardware (id en MAC vervangen)
-└── data/                  # alle gegevens — staat in .gitignore
-    ├── deelnemers.csv
+└── data/                  # alle gegevens — in .gitignore, behalve test/
+    ├── deelnemers.csv     # namen: nooit in git
+    ├── test/              # oefendata (Ecg_2Ch.csv, Acc.csv, Gyro.csv) voor de oefenopname — in git
     └── opnames/<YYYY-MM-DD_HHMM>_<deelnemer-id>/
         ├── opname.json    # deelnemer, starttijd, configuratie, notities, klokcorrectie, bronbestanden
         ├── annotaties.csv # perioden, momenten, sync-sprongen
@@ -111,6 +109,9 @@ streamlit/
 ```
 
 `data/` bevat namen en gezondheidsgegevens en staat daarom in `.gitignore`. Maak er zelf een back-up van.
+
+**Uitzondering:** `data/test/` gaat wél mee in git. Daarin staat de oefendata voor de oefenopname op
+**Test-opname stap voor stap** (januari 2026, volwassen man met een hartaandoening).
 
 ### annotaties.csv
 
@@ -143,7 +144,7 @@ for a in opname.chronologisch():
   (standaard alleen I = Ecg1).
   De toewijzing staat in `kern/verwerking.py` (`LEAD_I`, `LEAD_II`).
 - **De lezer voor het binaire `data_*.txt` is nog niet getest met een echt bestand.** Hij is gebouwd op de
-  interface-handleiding v5 (§6-§8) en getest met een synthetisch bestand volgens die handleiding. De handleiding
+  interface-handleiding v7.0 (`docs/PCardio - Interface v7.0.pdf`, §6-§8) en getest met een synthetisch bestand volgens die handleiding. De handleiding
   laat een paar details open (bytevolgorde, indeling van de pakketheader); de app controleert die tegen de
   payload-grootte in elke header en geeft een duidelijke fout als het niet klopt. Vergelijk bij de eerste echte
   opname het resultaat met een CSV-export van dezelfde opname.
@@ -157,8 +158,12 @@ for a in opname.chronologisch():
 ## Tests
 
 ```powershell
+pip install pytest                 # eenmalig; niet nodig om de app te draaien
 python -m pytest -q streamlit\tests
 ```
+
+Staat er oefendata in `data/test/`, dan maakt de test van **Test-opname** daar ook een oefenopname van (± 20 s
+extra).
 
 Optioneel ook met een echte P-Cardio-export: zet `ECG_TOOL_TESTDATA` op een map met `Ecg_2Ch.csv`.
 De paginatests gebruiken een tijdelijke datamap (via `ECG_TOOL_DATA`) en schrijven dus niet in `data/`.
@@ -170,3 +175,8 @@ De pagina's worden los getest met AppTest (Streamlit's testframework).
 - **Activiteiten of momenten toevoegen:** een regel in `config/activiteiten.txt` of `config/momenten.txt`.
 - **Nieuwe pagina:** maak `paginas/<naam>.py` en voeg een `st.Page(...)` toe aan `PAGINAS` in `app.py`.
 - **Logica** hoort in `kern/` (zonder Streamlit), zodat die ook in notebooks en tests bruikbaar is.
+- **Huisstijl:** zet geen kleuren in de pagina's. Gebruik de thema-kleuren uit `.streamlit/config.toml` (bijv.
+  `type="primary"` voor een knop) en in grafieken `PRIMAIR`, `ORANJE` en `GRAFIEK` uit `kern/plots.py`. Oranje
+  is schaars: alleen voor het belangrijkste getal of datapunt. Teksten in het Nederlands, kort, en geschreven voor
+  wie de opname doet. Uitleg hoort in `hulp.py` (de ?-pop-ups), niet in de pagina zelf.
+- **Nieuw pakket nodig?** Zet het in `requirements.txt` en voer `init_repo.cmd` opnieuw uit.

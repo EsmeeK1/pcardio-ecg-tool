@@ -1,7 +1,8 @@
 """Protocol van de P-Cardio via de 2M BLE-dongle: framing, Core Interface-pakketten, samenvoegen en datapakketten.
 
 Geen I/O en geen Streamlit. Gebaseerd op ``docs/PCardio - Interface v7.0.pdf`` (Core Interface, memory map,
-datapakketten) en ``docs/PCardio Dongle interface.pdf`` (seriële framing van de dongle), aangevuld met wat
+datapakketten) en ``PCardio Dongle interface.pdf`` (seriële framing van de dongle; vertrouwelijk, niet in deze
+repository), aangevuld met wat
 ``scripts/probe_device.py`` op echte hardware zag (19-10-2026, firmware 3.3.1.1). Waar de handleiding iets openlaat
 of iets anders zegt dan het apparaat doet, staat dat hieronder bij de betreffende constante.
 """
