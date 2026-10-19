@@ -53,7 +53,7 @@ GELIJKGEZET = (
     "die van **deze pc** (die zet een tijd bij elke klik in deze app). Om straks te weten welk stuk signaal bij "
     "'lopen' hoort, moeten die twee klokken gelijk lopen.\n\n"
     "**Wat moet je doen?** Zet vlak vóór de opname, terwijl de P-Cardio in de docking zit, de tijd van de "
-    "P-Cardio gelijk aan de tijd van deze pc (het `Time`-register, stap 3 van de voorbereiding in het protocol). "
+    "P-Cardio gelijk aan de tijd van deze pc (het `Time`-register, sectie 3 van het opnameprotocol). "
     "Dat kan **niet** vanuit deze app en **niet** via `config.txt`, maar alleen via Bluetooth of de USB-verbinding, "
     "bijv. met de PCardio-software van 2M. Zie de **Handleiding** → *Begrippen* voor de details. "
     "Vink dit vakje aan als je dat gedaan hebt.\n\n"
