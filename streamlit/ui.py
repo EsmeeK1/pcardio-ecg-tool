@@ -195,7 +195,7 @@ def live_ecg_compact() -> None:
         st.plotly_chart(fig, width="stretch", key="live_ecg_compact", config={"displayModeBar": False})
 
 
-LOGO = Path(__file__).resolve().parents[1] / "docs" / "images" / "appbakkers_logo.png"
+LOGO = Path(__file__).resolve().parent / "assets" / "appbakkers_logo.png"
 
 # Wat config.toml ([theme]) niet kan: kerncijfers in het kopfont en kaarten met een zachte schaduw.
 _HUISSTIJL = """
