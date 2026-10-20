@@ -249,6 +249,7 @@ def test_live_ecg_gesimuleerd() -> None:
         assert not at.exception, at.exception
         assert at.get("plotly_chart"), "geen live plot"
         assert any(m.label == "Firmware" and m.value == "3.3.1.1" for m in at.metric)
+        assert any(m.label == "Recorder" and m.value == "neemt NIET op" for m in at.metric)
     finally:
         _knop(at, "Ontkoppelen").click().run()
     assert live_sessie() is None

@@ -137,15 +137,16 @@ def status(sessie: LiveSessie) -> None:
     info = sessie.info
     dongle = sessie.dongle.status.omschrijving if sessie.dongle.status else "?"
     batterij = sessie.batterij if sessie.batterij is not None else (info.batterij if info else None)
-    kolommen = st.columns(5)
+    kolommen = st.columns(6)
     toestand = ("opnieuw verbinden…" if sessie.herverbindt else "verbinding kwijt" if sessie.verbroken
                 else TOESTANDEN.get(sessie.toestand, sessie.toestand))
     kolommen[0].metric("Toestand", toestand, help=f"Dongle: {dongle}")
     kolommen[1].metric("Batterij", f"{batterij} %" if batterij is not None else "–")
     kolommen[2].metric("Firmware", info.firmware if info else "–")
     kolommen[3].metric("Hardware", info.hw_tekst if info else "–")
+    kolommen[4].metric("Recorder", ("neemt op" if info.logt else "neemt NIET op") if info else "–", help=hulp.LIVE_LOGT)
     t = sessie.tellers
-    kolommen[4].metric(
+    kolommen[5].metric(
         "Pakketten", t["pakketten"], help=hulp.LIVE_TELLERS,
         delta=f"{t['crc_fout']} CRC · {t['onvolledig']} onvolledig · {t['tijdgaten']} gaten",
         delta_color="off" if not (t["crc_fout"] or t["onvolledig"] or t["tijdgaten"]) else "inverse",

@@ -324,6 +324,10 @@ LIVE_TELLERS = (
     "**Pakketten**: goed ontvangen (5 per seconde). **CRC-fout**: beschadigd, niet getoond. **Onvolledig**: een "
     "stuk van een pakket kwam niet aan. **Tijdgaten**: de tijd tussen twee pakketten was niet 0,2 s (pakket gemist)."
 )
+LIVE_LOGT = (
+    "Of de recorder zelf het ECG opslaat, gelezen bij het verbinden. Gestart of gestopt met de knop daarna? Dan klopt "
+    "dit pas weer na Opnieuw verbinden. Op de recorder zelf: knop 1-3 s indrukken, groen = neemt op, oranje = niet."
+)
 LIVE_LOG = "De laatste regels die tussen de app en de dongle over de seriële poort gingen. Handig bij problemen."
 LIVE_AUTO = (
     "Valt de verbinding weg (bijvoorbeeld als je even wegloopt van de laptop), dan probeert de app het vanzelf steeds "
