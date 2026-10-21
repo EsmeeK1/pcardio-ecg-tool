@@ -58,6 +58,7 @@ def test_live_startscherm_elektroden(opname: Opname) -> None:
     next(s for s in at.selectbox if s.label == "Deelnemer").set_value(eigen.id)
     plaatsing = next(s for s in at.selectbox if s.label.startswith("Plaatsing"))
     assert plaatsing.options == ["Optie 1: met sticker", "Optie 2: met lanyard"]
+    assert plaatsing.value == "Optie 2: met lanyard"  # standaard
     plaatsing.set_value("Optie 2: met lanyard")
     at.text_input[0].input("Huid met alcohol schoongemaakt")
     _knop(at, "Start opname").click().run()
@@ -76,6 +77,33 @@ def test_live(opname: Opname) -> None:
         assert not at.exception, (knop, at.exception)
     perioden = [a.label for a in Opname.laad(live.map).chronologisch() if a.soort == "periode"]
     assert perioden == ["Zitten", "Lopen (rustig)"]
+
+
+def test_live_plaatsing_blijft_staan_en_experiment(opname: Opname) -> None:
+    eigen = Deelnemers(DATA_ROOT).toevoegen("Plaatsing", None, "onbekend", False)
+    live = Opname.nieuw(eigen, pd.Timestamp.now(tz="UTC"), root=DATA_ROOT)
+    at = _app("live.py")
+    at.session_state["live_map"] = str(live.map)
+    at.run()
+    next(t for t in at.text_input if t.label.startswith("Plaatsing")).input("R2-Y2-G4").run()
+    for knop in ("Zitten", "Armen bewegen"):  # tweede periode: niets opnieuw typen
+        _knop(at, knop).click().run()
+    next(t for t in at.text_input if t.label.startswith("Plaatsing")).input("R1-Y1").run()
+    _knop(at, "Lopen (rustig)").click().run()
+    next(t for t in at.text_input if t.label == "Experiment").input("Elektrodeplaatsing 21-10").run()
+    assert not at.exception, at.exception
+
+    geladen = Opname.laad(live.map)
+    assert [(a.label, a.plaatsing) for a in geladen.chronologisch()] == [
+        ("Zitten", "R2-Y2-G4"), ("Armen bewegen", "R2-Y2-G4"), ("Lopen (rustig)", "R1-Y1"),
+    ]
+    assert geladen.info.experiment == "Elektrodeplaatsing 21-10"
+
+    # Na hervatten (nieuwe sessie) staat de laatste plaatsing weer in het veld.
+    opnieuw = _app("live.py")
+    opnieuw.session_state["live_map"] = str(live.map)
+    opnieuw.run()
+    assert next(t for t in opnieuw.text_input if t.label.startswith("Plaatsing")).value == "R1-Y1"
 
 
 def test_koppelen_klokcorrectie(opname: Opname) -> None:

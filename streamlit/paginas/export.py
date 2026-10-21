@@ -21,8 +21,8 @@ signalen = laad_signalen(opname)
 
 st.markdown(
     "Eén rij per ECG-sample, met de afgeleide leads, accelerometer, gyroscoop en overige kanalen (gekoppeld aan "
-    "de dichtstbijzijnde sample) en de kolommen **activiteit** en **moment** uit de annotaties, omgerekend naar "
-    "P-Cardio-tijd.",
+    "de dichtstbijzijnde sample) en de kolommen **activiteit**, **moment** en **plaatsing** uit de annotaties, "
+    "omgerekend naar P-Cardio-tijd, plus het **experiment** van de opname.",
 )
 
 perioden = [a for a in opname.chronologisch() if a.soort == "periode" and a.t_eind is not None]
@@ -52,7 +52,7 @@ if st.button("Maak export", type="primary", help=hulp.MAAK_EXPORT):
         pad = map_ / f"{opname.info.id}_{naam}.csv"
         df.to_csv(pad, index=False)
         annotaties_pad = map_ / f"{opname.info.id}_annotaties.csv"
-        opname.annotaties_df().to_csv(annotaties_pad, index=False)
+        opname.annotaties_df().assign(experiment=opname.info.experiment).to_csv(annotaties_pad, index=False)
     st.session_state.export = {"pad": str(pad), "annotaties": str(annotaties_pad), "rijen": len(df),
                                "voorbeeld": df.head(20)}
 

@@ -30,7 +30,7 @@ Windows-venv werkt niet in WSL en andersom.
 | **Live ECG** | Het ECG van de P-Cardio live bekijken via de 2M BLE-dongle (of een gesimuleerde dongle om te oefenen). Alleen kijken, er wordt niets opgeslagen. Tijdens het streamen staat er ook een klein live-ECG op **Live opname**. |
 | **Data koppelen** | Na de opname: P-Cardio-bestanden inlezen, koppelen aan de juiste opname en de klokcorrectie bepalen. |
 | **Bekijken & annoteren** | Per periode, moment of vrij venster de 6 leads met accelerometer, gyroscoop en overige kanalen eronder. Met de muis op het signaal zie je ook het label. Bladeren met **◀ Terug** / **Verder ▶** (Shift+← / Shift+→) en **Vorige** / **Volgende** annotatie (Shift+↑ / Shift+↓). Annotaties corrigeren (label, begin/eind verschuiven), beoordelen, of nieuwe toevoegen. |
-| **Export** | Eén CSV per opname (of per periode) met ECG, 6 leads, beweging en de kolommen `activiteit` en `moment` per sample. |
+| **Export** | Eén CSV per opname (of per periode) met ECG, 6 leads, beweging en de kolommen `activiteit`, `moment`, `plaatsing` en `experiment` per sample. |
 
 ### Live opname
 
@@ -40,6 +40,11 @@ Windows-venv werkt niet in WSL en andersom.
 3. Klik op een moment (of **Markeer nu**) zodra er iets gebeurt; de omschrijving kun je achteraf aanpassen.
 
 Elke klik wordt direct opgeslagen. Browser dicht of app herstart? Kies **Opname hervatten**.
+
+**Experimenten:** vul bij het starten het optionele veld **Experiment** in (bijv. *Elektrodeplaatsing 21-10*). Het
+geldt voor de hele opname. Boven de periodeknoppen staat het veld **Plaatsing** (bijv. *R3-Y3-G1-Z1*). Dat wordt
+opgeslagen bij elke periode die je start en blijft staan tot je het wijzigt. Beide velden zijn later aan te passen
+in het logboek en op **Bekijken & annoteren**, en komen in de export.
 
 ### Live ECG
 
@@ -101,7 +106,7 @@ streamlit/
     ├── deelnemers.csv     # namen: nooit in git
     ├── test/              # oefendata (Ecg_2Ch.csv, Acc.csv, Gyro.csv) voor de oefenopname — in git
     └── opnames/<YYYY-MM-DD_HHMM>_<deelnemer-id>/
-        ├── opname.json    # deelnemer, starttijd, configuratie, notities, klokcorrectie, bronbestanden
+        ├── opname.json    # deelnemer, starttijd, configuratie, experiment, notities, klokcorrectie, bronbestanden
         ├── annotaties.csv # perioden, momenten, sync-sprongen
         ├── ruw/           # onveranderde kopie van de ingelezen P-Cardio-bestanden
         ├── signalen/      # ingelezen signalen als parquet (snel laden)
@@ -123,6 +128,7 @@ streamlit/
 | `tijdbasis` | `pc` = live gelogd met de pc-klok (klokcorrectie wordt erbij opgeteld), `data` = achteraf in P-Cardio-tijd |
 | `opmerking` | vrije tekst |
 | `beoordeling`, `beoordeling_opmerking` | signaalkwaliteit: `schoon`, `ruis, QRS herkenbaar`, `onbruikbaar` + toelichting |
+| `plaatsing` | experimentconditie van een periode, bijv. `R3-Y3-G1-Z1`; leeg bij oudere opnames |
 
 ### Vanuit een notebook
 
