@@ -191,6 +191,7 @@ class Annotatie:
     opmerking: str = ""
     beoordeling: str = ""
     beoordeling_opmerking: str = ""
+    plaatsing: str = ""  # experimentconditie per periode, bijv. "R3-Y3-G1-Z1"
 
     @property
     def duur_s(self) -> float | None:
@@ -229,6 +230,7 @@ def lees_annotaties(pad: str | Path) -> tuple[list[Annotatie], float | None]:
             opmerking=rij["opmerking"],
             beoordeling=rij["beoordeling"],
             beoordeling_opmerking=rij["beoordeling_opmerking"],
+            plaatsing=rij.get("plaatsing", ""),  # ontbreekt in bestanden van vóór oktober 2026
         )
         for _, rij in df.iterrows()
     ]
@@ -254,6 +256,7 @@ class OpnameInfo:
     configuratie: str = ""
     pcardio_tijd_gelijkgezet: bool = False
     notities: str = ""
+    experiment: str = ""  # geldt voor de hele opname, bijv. "Elektrodeplaatsing 21-10"
     live_afgesloten: bool = False
     klokcorrectie_s: float | None = None
     klokcorrectie_bron: str = ""
@@ -323,6 +326,7 @@ class Opname:
         t_eind: datetime | pd.Timestamp | None = None,
         tijdbasis: str = "pc",
         opmerking: str = "",
+        plaatsing: str = "",
     ) -> Annotatie:
         if soort not in SOORTEN:
             raise ValueError(f"Onbekende soort '{soort}'. Beschikbaar: {list(SOORTEN)}")
@@ -338,17 +342,28 @@ class Opname:
             t_eind=als_timestamp(t_eind) if t_eind is not None else None,
             tijdbasis=tijdbasis,
             opmerking=opmerking,
+            plaatsing=plaatsing.strip(),
         )
         self.annotaties.append(annotatie)
         self._opslaan()
         return annotatie
 
-    def start_periode(self, label: str) -> Annotatie:
+    def start_periode(self, label: str, plaatsing: str = "") -> Annotatie:
         """Live: start een periode; een lopende periode wordt op hetzelfde moment gestopt."""
         tijd = nu()
         if self.actieve_periode is not None:
             self.actieve_periode.t_eind = als_timestamp(tijd)
-        return self.voeg_toe("periode", label, tijd)
+        return self.voeg_toe("periode", label, tijd, plaatsing=plaatsing)
+
+    @property
+    def laatste_plaatsing(self) -> str:
+        """Plaatsing van de laatst gestarte periode: het live veld begint hiermee (ook na hervatten)."""
+        perioden = [a for a in self.annotaties if a.soort == "periode"]
+        return max(perioden, key=lambda a: a.id).plaatsing if perioden else ""
+
+    def zet_experiment(self, experiment: str) -> None:
+        self.info.experiment = experiment.strip()
+        self._opslaan()
 
     def stop_periode(self) -> None:
         if self.actieve_periode is not None:

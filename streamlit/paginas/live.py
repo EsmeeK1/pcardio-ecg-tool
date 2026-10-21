@@ -27,13 +27,26 @@ def _opname() -> Opname:
 # --- callbacks: draaien vóór de rerun, dus het tijdstempel is het moment van klikken ---
 
 
+def _plaatsing_sleutel() -> str:
+    return f"plaatsing_{Path(st.session_state.live_map).name}"
+
+
+def _start_periode(label: str) -> None:
+    """Met de plaatsing uit het veld; die blijft staan voor de volgende periode."""
+    _opname().start_periode(label, st.session_state.get(_plaatsing_sleutel(), ""))
+
+
 def _start_vrije_periode() -> None:
     label = st.session_state.vrije_periode.strip()
     if not label:
         meld("error", "Vul eerst een omschrijving in voor de periode.")
         return
-    _opname().start_periode(label)
+    _start_periode(label)
     st.session_state.vrije_periode = ""
+
+
+def _zet_experiment() -> None:
+    _opname().zet_experiment(st.session_state.live_experiment)
 
 
 def _vrij_moment() -> None:
@@ -48,7 +61,7 @@ def _sluit_scherm() -> None:
 def _verwerk_bewerkingen() -> None:
     opname = _opname()
     for positie, wijziging in st.session_state[st.session_state.log_key]["edited_rows"].items():
-        velden = {k: (v or "") for k, v in wijziging.items() if k in ("label", "opmerking")}
+        velden = {k: (v or "") for k, v in wijziging.items() if k in ("label", "plaatsing", "opmerking")}
         if velden:
             opname.wijzig(st.session_state.log_ids[positie], **velden)
 
@@ -79,7 +92,7 @@ def startscherm() -> None:
                 )
                 plaatsing, foto = st.columns([4, 1], vertical_alignment="bottom")
                 elektroden = plaatsing.selectbox(
-                    "Plaatsing van de elektroden", ELEKTRODE_PLAATSINGEN, help=hulp.ELEKTRODEN,
+                    "Plaatsing van de elektroden", ELEKTRODE_PLAATSINGEN, index=1, help=hulp.ELEKTRODEN,  # lanyard
                 )
                 with foto.popover("📷 Foto's", width="stretch"):
                     st.image(str(ELEKTRODE_FOTO), caption="Bron: handleiding P-Cardio (2M Engineering)")
@@ -93,6 +106,9 @@ def startscherm() -> None:
                     "Tijd van de P-Cardio is vlak voor de opname gelijkgezet met déze pc",
                     help=hulp.GELIJKGEZET,
                 )
+                experiment = st.text_input(
+                    "Experiment (optioneel)", placeholder="bijv. Elektrodeplaatsing 21-10", help=hulp.EXPERIMENT,
+                )
                 notities = st.text_area("Notities", help=hulp.NOTITIES)
                 if st.form_submit_button("Start opname", type="primary"):
                     try:
@@ -105,6 +121,7 @@ def startscherm() -> None:
                             configuratie=configuratie.strip(),
                             pcardio_tijd_gelijkgezet=gelijkgezet,
                             notities=notities.strip(),
+                            experiment=experiment.strip(),
                         )
                         st.session_state.live_map = str(opname.map)
                         st.rerun()
@@ -136,7 +153,7 @@ def status() -> None:
             st.caption("Rust / pauze. Klik op een activiteit om een periode te starten.")
         else:
             verstreken = (pd.Timestamp(nu()) - actief.t_start).total_seconds()
-            st.markdown(f"### Bezig: {actief.label}")
+            st.markdown(f"### Bezig: {actief.label}" + (f" · {actief.plaatsing}" if actief.plaatsing else ""))
             st.markdown(f"**{int(verstreken // 60)}:{int(verstreken % 60):02d}** sinds {klok(actief.t_start)}")
     midden.metric("Klok", pd.Timestamp(nu()).tz_convert(WEERGAVE_TZ).strftime("%H:%M:%S"), help=hulp.KLOK)
     with rechts:
@@ -183,8 +200,13 @@ def livescherm() -> None:
         st.button("Ja, afsluiten", on_click=lambda: _opname().sluit_live_af(), type="primary")
 
     st.subheader("Perioden", help=hulp.PERIODEN)
+    # Begint met de plaatsing van de laatste periode (ook na hervatten) en blijft staan tot je hem wijzigt.
+    st.session_state.setdefault(_plaatsing_sleutel(), opname.laatste_plaatsing)
+    st.text_input(
+        "Plaatsing (optioneel)", key=_plaatsing_sleutel(), placeholder="bijv. R3-Y3-G1-Z1", help=hulp.PLAATSING,
+    )
     actief = opname.actieve_periode.label if opname.actieve_periode is not None else None
-    knoppenraster(lees_lijst("activiteiten"), "periode", lambda l: _opname().start_periode(l), actief)
+    knoppenraster(lees_lijst("activiteiten"), "periode", _start_periode, actief)
     tekst, knop = st.columns([3, 1])
     tekst.text_input("Andere activiteit", key="vrije_periode", label_visibility="collapsed", placeholder="Andere activiteit…")
     knop.button(
@@ -207,6 +229,8 @@ def livescherm() -> None:
 
 def logboek(opname: Opname) -> None:
     st.subheader("Logboek", help=hulp.LOGBOEK)
+    st.session_state.live_experiment = opname.info.experiment
+    st.text_input("Experiment", key="live_experiment", on_change=_zet_experiment, help=hulp.EXPERIMENT)
     df = opname.annotaties_df()
     if df.empty:
         st.caption("Nog niets gelogd.")
@@ -220,6 +244,7 @@ def logboek(opname: Opname) -> None:
             "start": df["t_start"].str[11:23],
             "eind": df["t_eind"].str[11:23],
             "duur_s": df["duur_s"],
+            "plaatsing": df["plaatsing"],
             "opmerking": df["opmerking"],
             "verwijder": False,
         },

@@ -154,6 +154,48 @@ def test_export_terug_inlezen(tmp_path: Path) -> None:
     assert (doel.info.klokcorrectie_s, doel.info.klokcorrectie_bron) == (pytest.approx(1.2), "geïmporteerd")
 
 
+def test_experiment_en_plaatsing(tmp_path: Path) -> None:
+    t0 = pd.Timestamp("2026-10-05 08:00:00", tz="UTC")
+    opname = Opname.nieuw(_deelnemer(tmp_path), t0, root=tmp_path, experiment="Elektrodeplaatsing 21-10")
+    opname.voeg_toe("periode", "Zitten", t0 + pd.Timedelta(seconds=2), t0 + pd.Timedelta(seconds=6), plaatsing="R2-Y2-G4")
+    opname.voeg_toe("periode", "Armen", t0 + pd.Timedelta(seconds=8), t0 + pd.Timedelta(seconds=10), plaatsing="R1-Y1")
+    assert opname.laatste_plaatsing == "R1-Y1"
+    opname.wijzig(2, plaatsing="R1-Y2")
+    opname.zet_experiment("  Elektrodeplaatsing 22-10 ")
+
+    geladen = Opname.laad(opname.map)
+    assert geladen.info.experiment == "Elektrodeplaatsing 22-10"
+    assert [a.plaatsing for a in geladen.chronologisch()] == ["R2-Y2-G4", "R1-Y2"]
+
+    df = gecombineerd(geladen, _signalen(t0))
+    assert set(df["experiment"]) == {"Elektrodeplaatsing 22-10"}
+    assert set(df.loc[df["activiteit"] == "Zitten", "plaatsing"]) == {"R2-Y2-G4"}
+    assert set(df.loc[df["activiteit"] == "", "plaatsing"]) == {""}
+    pad = tmp_path / "volledig.csv"
+    df.to_csv(pad, index=False)
+    assert {s.naam for s in lees_export(pad)} == {"ecg", "acc"}  # nieuwe kolommen zijn geen signalen
+
+
+def test_bestanden_zonder_experiment_en_plaatsing(tmp_path: Path) -> None:
+    """Opnames van vóór deze velden: opname.json zonder experiment, annotaties.csv zonder plaatsing."""
+    map_ = tmp_path / "opnames" / "2026-10-07_1305_D003"
+    map_.mkdir(parents=True)
+    (map_ / "opname.json").write_text(
+        '{"id": "2026-10-07_1305_D003", "deelnemer_id": "D003", "gestart": "2026-10-07T13:05:00.798+02:00"}',
+        encoding="utf-8",
+    )
+    (map_ / "annotaties.csv").write_text(
+        "id,soort,label,t_start,t_eind,tijdbasis,opmerking,beoordeling,beoordeling_opmerking\n"
+        "1,periode,Zitten,2026-10-07T13:05:15.714+02:00,2026-10-07T13:06:16.680+02:00,pc,,,\n",
+        encoding="utf-8",
+    )
+    opname = Opname.laad(map_)
+    assert opname.info.experiment == "" and opname.annotaties[0].plaatsing == ""
+    assert opname.laatste_plaatsing == ""
+    opname.start_periode("Staan", "R2-Y2-G4")  # en daarna gewoon verder schrijven
+    assert "plaatsing" in (map_ / "annotaties.csv").read_text(encoding="utf-8").splitlines()[0]
+
+
 def test_zes_leads_einthoven() -> None:
     ecg = pd.DataFrame({"tijd": [0, 1], "Ecg1": [1.0, 2.0], "Ecg2": [3.0, 5.0]})
     leads = zes_leads(ecg)

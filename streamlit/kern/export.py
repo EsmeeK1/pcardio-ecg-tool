@@ -21,7 +21,8 @@ def gecombineerd(
 ) -> pd.DataFrame:
     """Eén rij per ECG-sample. Andere signalen worden gekoppeld aan de dichtstbijzijnde sample.
 
-    Kolommen ``activiteit`` en ``moment`` komen uit de annotaties (omgerekend naar P-Cardio-tijd).
+    Kolommen ``activiteit``, ``moment`` en ``plaatsing`` komen uit de annotaties (omgerekend naar P-Cardio-tijd),
+    ``experiment`` uit de opname.
     """
     if not signalen:
         raise ValueError("Geen signalen om te exporteren. Koppel eerst P-Cardio-data aan deze opname.")
@@ -47,17 +48,20 @@ def gecombineerd(
         tolerantie = pd.Timedelta(seconds=1.5 / signaal.fs) if np.isfinite(signaal.fs) else None
         basis = pd.merge_asof(basis, extra, on="tijd", direction="nearest", tolerance=tolerantie)
 
-    basis["activiteit"], basis["moment"] = _annotatiekolommen(opname, basis["tijd"])
+    basis["activiteit"], basis["moment"], basis["plaatsing"] = _annotatiekolommen(opname, basis["tijd"])
+    basis["experiment"] = opname.info.experiment
     basis.insert(1, "t_s", (basis["tijd"] - basis["tijd"].iloc[0]).dt.total_seconds() if len(basis) else [])
     basis["tijd"] = basis["tijd"].dt.tz_convert(WEERGAVE_TZ)
     return basis
 
 
-def _annotatiekolommen(opname: Opname, tijd: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+def _annotatiekolommen(opname: Opname, tijd: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per sample: activiteit, moment en plaatsing (van de periode)."""
     activiteit = np.full(len(tijd), "", dtype=object)
     moment = np.full(len(tijd), "", dtype=object)
+    plaatsing = np.full(len(tijd), "", dtype=object)
     if not len(tijd):
-        return activiteit, moment
+        return activiteit, moment, plaatsing
     for annotatie in opname.chronologisch():
         start, eind = opname.in_datatijd(annotatie)
         if annotatie.soort == "periode" and eind is not None:
@@ -66,18 +70,23 @@ def _annotatiekolommen(opname: Opname, tijd: pd.Series) -> tuple[np.ndarray, np.
             if i1 > i0:
                 bestaand = activiteit[i0:i1]
                 activiteit[i0:i1] = np.where(bestaand == "", annotatie.label, bestaand + " + " + annotatie.label)
+                p, bestaand = annotatie.plaatsing, plaatsing[i0:i1]
+                if p:  # bij overlap samenvoegen, maar dezelfde plaatsing niet dubbel
+                    plaatsing[i0:i1] = np.where((bestaand == "") | (bestaand == p), p, bestaand + " + " + p)
         else:
             if start < tijd.iloc[0] or start > tijd.iloc[-1]:
                 continue
             i = int(np.argmin(np.abs((tijd - start).dt.total_seconds().to_numpy())))
             moment[i] = annotatie.label if not moment[i] else f"{moment[i]} + {annotatie.label}"
-    return activiteit, moment
+    return activiteit, moment, plaatsing
 
 
 # --- terug inlezen -----------------------------------------------------------------------------------
 
 # Kolommen die de app zelf (opnieuw) berekent.
-_AFGELEID = {"t_s", "III", "aVR", "aVL", "aVF", "acc_magnitude", "gyro_magnitude", "activiteit", "moment"}
+_AFGELEID = {
+    "t_s", "III", "aVR", "aVL", "aVF", "acc_magnitude", "gyro_magnitude", "activiteit", "moment", "plaatsing", "experiment",
+}
 # De export bewaart geen eenheden; dit zijn die van de P-Cardio.
 _EENHEID = {"ecg": "mV", "emg": "mV", "acc": "g", "gyro": "deg/s", "mag": "", "batterij": "%", "bioz": "Ohm"}
 

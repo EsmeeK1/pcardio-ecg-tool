@@ -26,6 +26,11 @@ toon_meldingen()
 opname = kies_opname("bekijk_opname", alleen_met_data=True)
 if opname is None:
     st.stop()
+experiment = st.text_input(
+    "Experiment", value=opname.info.experiment, key=f"experiment_{opname.info.id}", help=hulp.EXPERIMENT,
+).strip()
+if experiment != opname.info.experiment:
+    opname.zet_experiment(experiment)
 signalen = laad_signalen(opname)
 if not signalen:
     st.error("De signalen van deze opname konden niet geladen worden. Koppel de data opnieuw.")
@@ -157,10 +162,12 @@ def _verschuif(stap_s: float, venster_s: float) -> None:
     st.session_state[start_sleutel] = min(max(nieuw, begin_klok), begin_klok + timedelta(seconds=laatste_start))
 
 
-def _voeg_toe(soort: str, label: str, begin: pd.Timestamp, eind: pd.Timestamp | None, opmerking: str = "") -> None:
+def _voeg_toe(
+    soort: str, label: str, begin: pd.Timestamp, eind: pd.Timestamp | None, opmerking: str = "", plaatsing: str = "",
+) -> None:
     """Nieuwe annotatie in P-Cardio-tijd. Het venster blijft staan, zodat je meteen het volgende stuk kunt doen."""
     try:
-        nieuw = opname.voeg_toe(soort, label, begin, eind, tijdbasis="data", opmerking=opmerking)
+        nieuw = opname.voeg_toe(soort, label, begin, eind, tijdbasis="data", opmerking=opmerking, plaatsing=plaatsing)
     except ValueError as fout:
         st.error(str(fout))
         return
@@ -345,6 +352,11 @@ if gekozen is not None:
             label = gekozen.label
         else:
             label = _label_kiezer(gekozen.soort, gekozen.label, s)
+        plaatsing = (
+            st.text_input("Plaatsing", value=gekozen.plaatsing, key=f"{s}_plaatsing", help=hulp.PLAATSING)
+            if gekozen.soort == "periode"
+            else gekozen.plaatsing
+        )
         opmerking = st.text_input("Opmerking", value=gekozen.opmerking, key=f"{s}_opm", help=hulp.OPMERKING)
         verschuif_start = st.number_input(
             "Begin verschuiven (s)", -600.0, 600.0, 0.0, 0.1, key=f"{s}_vs",
@@ -376,6 +388,7 @@ if gekozen is not None:
             opname.wijzig(
                 gekozen.id,
                 label=label or gekozen.label,
+                plaatsing=plaatsing.strip(),
                 opmerking=opmerking,
                 beoordeling=beoordeling,
                 beoordeling_opmerking=toelichting,
@@ -430,9 +443,15 @@ with st.expander("Nieuwe annotatie in dit venster", expanded=gekozen is None or 
     opmerking = st.text_input("Opmerking", key=f"{s}_opm", help=hulp.OPMERKING)
 
     if soort == "periode":
+        plaatsing = st.text_input(
+            "Plaatsing", value=opname.laatste_plaatsing, key=f"{s}_plaatsing", help=hulp.PLAATSING,
+        )
         geklikt = _periode_label(s)
         if geklikt:
-            _voeg_toe("periode", geklikt, t0 + pd.Timedelta(seconds=begin_s), t0 + pd.Timedelta(seconds=eind_s), opmerking)
+            _voeg_toe(
+                "periode", geklikt, t0 + pd.Timedelta(seconds=begin_s), t0 + pd.Timedelta(seconds=eind_s), opmerking,
+                plaatsing,
+            )
     else:
         label = _label_kiezer("moment", "", s)
         if st.button("Toevoegen", type="primary", key=f"{s}_toevoegen"):
@@ -446,8 +465,8 @@ if df.empty:
     st.caption("Nog geen annotaties.")
 else:
     st.dataframe(
-        df[["soort", "label", "t_start_data", "t_eind_data", "duur_s", "tijdbasis", "opmerking", "beoordeling",
-            "beoordeling_opmerking"]].rename(columns={"t_start_data": "start (P-Cardio-tijd)",
+        df[["soort", "label", "plaatsing", "t_start_data", "t_eind_data", "duur_s", "tijdbasis", "opmerking",
+            "beoordeling", "beoordeling_opmerking"]].rename(columns={"t_start_data": "start (P-Cardio-tijd)",
                                                       "t_eind_data": "eind (P-Cardio-tijd)"}),
         hide_index=True,
         width="stretch",

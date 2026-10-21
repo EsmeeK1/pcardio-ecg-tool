@@ -299,7 +299,7 @@ def _teken_annotaties(
 def _label_spoor(fig: go.Figure, opname: Opname, t: pd.Series, w: np.ndarray, rij: int) -> None:
     """Onzichtbare punten op het signaal met het label als hovertekst: binnen een periode op elk punt, bij een
     moment op het dichtstbijzijnde punt (zoals de export). Zo staat het label in het hovervenster."""
-    activiteit, moment = _annotatiekolommen(opname, t)
+    activiteit, moment, _ = _annotatiekolommen(opname, t)
     tekst = np.where((activiteit != "") & (moment != ""), activiteit + ", " + moment, activiteit + moment)
     gelabeld = tekst != ""
     if not gelabeld.any():

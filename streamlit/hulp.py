@@ -61,6 +61,15 @@ GELIJKGEZET = (
     "minuten of uren verschillen, moet je de correctie handmatig opzoeken."
 )
 NOTITIES = "Bijzonderheden van deze opname, bijv. 'deelnemer had net gesport'."
+EXPERIMENT = (
+    "Bij welk experiment deze opname hoort, bijv. *Elektrodeplaatsing 21-10*. Geldt voor de hele opname en komt "
+    "in elke regel van de export (kolom `experiment`). Optioneel. Geen namen: alleen deelnemer-ID's."
+)
+PLAATSING = (
+    "De omstandigheid tijdens deze periode, bijv. de elektrodeplaatsing *R3-Y3-G1-Z1*. Wordt opgeslagen bij elke "
+    "periode die je start en **blijft staan** tot je hem wijzigt: bij een volgende activiteit hoef je niets opnieuw "
+    "te typen. Komt in de export (kolom `plaatsing`). Optioneel."
+)
 HERVATTEN = "Opnames die nog niet zijn afgesloten, bijv. na het per ongeluk sluiten van de browser."
 KLOK = "Huidige tijd van deze pc. Deze tijd komt in de annotaties."
 SYNC = (
@@ -81,7 +90,8 @@ MOMENTEN = (
 )
 ANDER_MOMENT = "Een moment dat niet in de lijst staat. Let op: het tijdstip is het moment dat je op **Markeer** klikt."
 LOGBOEK = (
-    "Alles wat er gelogd is, nieuwste bovenaan. Je kunt **label** en **opmerking** direct in de tabel aanpassen. "
+    "Alles wat er gelogd is, nieuwste bovenaan. Je kunt **label**, **plaatsing** en **opmerking** direct in de "
+    "tabel aanpassen. "
     "Fout geklikt? Vink *verwijder?* aan en klik op de knop eronder."
 )
 VERWIJDER_REGELS = "Verwijdert alle regels waarbij *verwijder?* is aangevinkt."
