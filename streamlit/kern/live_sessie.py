@@ -79,6 +79,7 @@ class LiveSessie:
         self.buffer = RingBuffer()
         self.lead_off: bool | None = None
         self.batterij: int | None = None
+        self.logt: bool | None = None  # neemt de recorder zelf op; tijdens streamen uit elk pakket bijgewerkt
         self.tellers = {"pakketten": 0, "crc_fout": 0, "onvolledig": 0, "tijdgaten": 0}
         self._samen: p.Samenvoeger | None = None
         self._vorige_tijd: float | None = None
@@ -154,6 +155,7 @@ class LiveSessie:
 
     def _lees_apparaat(self) -> None:
         self.info = p.Info.van_bytes(self.dongle.lees(p.INFO_ADRES, p.INFO_LENGTE))
+        self.logt = self.info.logt
         self.configs = p.decodeer_config(self.dongle.lees(p.CONFIG_ADRES, p.CONFIG_LENGTE))
 
     @property
@@ -195,6 +197,7 @@ class LiveSessie:
         self.toestand = "los"
         self.verbroken = False
         self.info = None
+        self.logt = None
         self.configs = []
 
     def schrijf_config(self, configs: list[SensorConfig], bevestigd: bool = False) -> None:
@@ -317,6 +320,7 @@ class LiveSessie:
         if self._vorige_tijd is not None and abs(data.tijd - self._vorige_tijd - PAKKET_INTERVAL_S) > GAT_MARGE_S:
             self.tellers["tijdgaten"] += 1
         self._vorige_tijd = data.tijd
+        self.logt = bool(data.status & 1)  # §6.1.3; zo ziet de app ook starten/stoppen met de knop op de recorder
         for config, waarden in data.sensoren:
             if config.sensor_id in p.ECG_SENSOREN and config == self.ecg:
                 self.buffer.voeg_toe(data.tijd, waarden)
