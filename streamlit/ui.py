@@ -185,6 +185,13 @@ def live_ecg_compact() -> None:
         else:
             knop.button("Opnieuw verbinden", on_click=sessie.herverbind, type="primary", width="stretch")
         return
+    if sessie is not None and sessie.logt is not None:
+        bijgewerkt = "" if sessie.toestand == "streamen" else " (gelezen bij het verbinden)"
+        if sessie.logt:
+            st.success(f"Recorder: **neemt op**{bijgewerkt}")
+        else:
+            st.warning(f"Recorder: **neemt NIET op**{bijgewerkt}. Houd de knop op de P-Cardio 1-3 s ingedrukt "
+                       "om te starten (lampje groen).")
     if sessie is None or sessie.toestand != "streamen":
         link("paginas/live_ecg.py", "Live ECG bekijken (verbinden met de dongle)")
         return
