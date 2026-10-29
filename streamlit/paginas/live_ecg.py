@@ -144,7 +144,9 @@ def status(sessie: LiveSessie) -> None:
     kolommen[1].metric("Batterij", f"{batterij} %" if batterij is not None else "–")
     kolommen[2].metric("Firmware", info.firmware if info else "–")
     kolommen[3].metric("Hardware", info.hw_tekst if info else "–")
-    kolommen[4].metric("Recorder", ("neemt op" if info.logt else "neemt NIET op") if info else "–", help=hulp.LIVE_LOGT)
+    kolommen[4].metric(
+        "Recorder", {True: "neemt op", False: "neemt NIET op"}.get(sessie.logt, "–"), help=hulp.LIVE_LOGT,
+    )
     t = sessie.tellers
     kolommen[5].metric(
         "Pakketten", t["pakketten"], help=hulp.LIVE_TELLERS,
