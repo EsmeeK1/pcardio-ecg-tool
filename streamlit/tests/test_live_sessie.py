@@ -55,6 +55,20 @@ def test_verbinden_streamen_stoppen(sessie: LiveSessie) -> None:
     assert verzonden[-2:] == ["$T03", "$D"]
 
 
+def test_opnamestatus_volgt_de_stream(sessie: LiveSessie) -> None:
+    """Starten/stoppen met de knop op de recorder is zichtbaar zonder opnieuw te verbinden (bit 0 in elk pakket)."""
+    sessie.verbind()
+    assert sessie.logt is False
+    sessie.start()
+    _wacht(lambda: sessie.tellers["pakketten"] >= 1)
+    sessie.dongle.logt = True  # knop op de recorder ingedrukt
+    _wacht(lambda: sessie.logt is True)
+    sessie.dongle.logt = False
+    _wacht(lambda: sessie.logt is False)
+    sessie.ontkoppel()
+    assert sessie.logt is None
+
+
 def test_niets_geschreven_behalve_pincode(sessie: LiveSessie) -> None:
     sessie.verbind()
     sessie.start()
