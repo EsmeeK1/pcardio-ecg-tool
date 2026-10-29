@@ -278,6 +278,20 @@ def test_live_ecg_gesimuleerd() -> None:
         assert at.get("plotly_chart"), "geen live plot"
         assert any(m.label == "Firmware" and m.value == "3.3.1.1" for m in at.metric)
         assert any(m.label == "Recorder" and m.value == "neemt NIET op" for m in at.metric)
+
+        # Op Live opname staat dezelfde status, en die volgt de stream.
+        live = _app("live.py")
+        live.session_state["live_map"] = str(
+            Opname.nieuw(Deelnemers(DATA_ROOT).toevoegen("Status", None, "onbekend", False),
+                         pd.Timestamp.now(tz="UTC"), root=DATA_ROOT).map,
+        )
+        live.run()
+        assert any("neemt NIET op" in w.value for w in live.warning)
+        live_sessie().dongle.logt = True
+        _wacht_tot(lambda: live_sessie().logt is True)
+        live.run()
+        assert any("neemt op" in s.value for s in live.success)
+        assert not live.exception, live.exception
     finally:
         _knop(at, "Ontkoppelen").click().run()
     assert live_sessie() is None
