@@ -230,6 +230,7 @@ class SimDongle(Dongle):
         self.configs = list(p.STANDAARD_CONFIG if configs is None else configs)
         self.verbind_na_s = verbind_na_s
         self.geschreven: list[tuple[int, bytes]] = []
+        self.logt = False  # of de gesimuleerde recorder zelf opneemt (bit 0 van de apparaatstatus)
         self._uit = bytearray()
         self._toestand = p.DongleStatus.IDLE
         self._verbonden_om: float | None = None
@@ -286,7 +287,8 @@ class SimDongle(Dongle):
     def _geheugen(self, adres: int, lengte: int) -> bytes:
         info = (
             (0x0102030405060708).to_bytes(8, "little") + (0xAABBCCDDEEFF).to_bytes(8, "little")
-            + bytes([3, 3, 1, 1]) + bytes(4) + bytes(4) + (100).to_bytes(4, "little") + bytes(12) + bytes([0, 2])
+            + bytes([3, 3, 1, 1]) + bytes(4) + bytes(4) + (100).to_bytes(4, "little")
+            + int(self.logt).to_bytes(4, "little") + bytes(8) + bytes([0, 2])
         )
         geheugen = bytearray(512)
         geheugen[:len(info)] = info
@@ -305,7 +307,7 @@ class SimDongle(Dongle):
                 waarden.append(np.full((n, 1), 100.0))
             else:
                 waarden.append(np.zeros((n, c.datatype.elementen)))
-        status = 0b0011_1010  # streamt, BLE verbonden, batterij 75-100 % (zoals op de echte recorder)
+        status = 0b0011_1010 | self.logt  # streamt, BLE verbonden, batterij 75-100 % (zoals op de echte recorder)
         return p.maak_datapakket(t_eind, status, self.configs, waarden)
 
     def _lees(self) -> bytes:
