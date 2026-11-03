@@ -91,8 +91,8 @@ FASES: list[tuple[str, str, list[Stap]]] = [
             Stap(
                 "zitten",
                 "Zitten — 60 s, met 2× een hoest",
-                "Klik **Zitten**. Laat de deelnemer na ±20 s en na ±40 s één keer hoesten en klik meteen op het "
-                "moment **Hoest**. Na 60 s: **Stop periode**. Rust ±20 s.",
+                "Klik **Zitten**. Laat de deelnemer na ±20 s en na ±40 s één keer hoesten en klik meteen "
+                "op **Markeer nu** (omschrijving later: *Hoest*). Na 60 s: **Stop periode**. Rust ±20 s.",
             ),
             Stap(
                 "staan",
@@ -110,14 +110,14 @@ FASES: list[tuple[str, str, list[Stap]]] = [
                 "Klik **Armen bewegen**, na 30 s **Stop periode**. Rust ±20 s.",
             ),
             Stap(
-                "springen",
-                "Springen — 30 s",
-                "Klik **Springen**, na 30 s **Stop periode**.",
+                "traplopen",
+                "Traplopen — 30 s",
+                "Klik **Traplopen**, na 30 s **Stop periode**.",
             ),
             Stap(
                 "herstel",
                 "Herstel — 60 s rustig zitten",
-                "Klik **Herstel (rustig zitten)**. Hier zie je de hartslag weer dalen.",
+                "Klik **Zitten** en laat de deelnemer rustig zitten. Hier zie je de hartslag weer dalen.",
             ),
             Stap(
                 "sync_eind",
@@ -178,7 +178,7 @@ FASES: list[tuple[str, str, list[Stap]]] = [
             ),
             Stap(
                 "vergelijken",
-                "Vergelijk zitten, lopen en springen",
+                "Vergelijk zitten, lopen en traplopen",
                 "Wat zie je in de ECG, en zie je het ook in de accelerometer en de gyroscoop? Is één kanaal gevoeliger?",
             ),
             Stap(

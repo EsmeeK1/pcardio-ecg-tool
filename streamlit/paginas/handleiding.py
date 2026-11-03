@@ -56,7 +56,7 @@ Alles wat je vastlegt over wat er gebeurde. Er zijn drie soorten:
 
 - **Periode**: een activiteit met een **begin en een eind**, bijv. *Lopen (rustig)* van 10:03:00 tot 10:04:00.
   In de plots een **gekleurd vlak**.
-- **Moment**: **één tijdstip**, bijv. *Hoest* of *Elektrode los*. In de plots een **oranje lijn**.
+- **Moment**: **één tijdstip**, bijv. een hoest, vastgelegd met *Markeer nu*. In de plots een **oranje lijn**.
 - **Sync-sprong**: een speciaal moment om de klokken gelijk te zetten (zie hieronder). In de plots een **rode
   stippellijn**.
 

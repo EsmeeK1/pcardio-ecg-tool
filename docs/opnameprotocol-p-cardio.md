@@ -95,19 +95,19 @@ begint. Rust ± 20 s tussen de activiteiten.
 
 | # | Activiteit | Duur | Moment(en) |
 |---|---|---|---|
-| 1 | Zitten | 60 s | 2× **Hoest**, na ± 20 s en ± 40 s |
+| 1 | Zitten | 60 s | 2× hoesten, na ± 20 s en ± 40 s: klik **Markeer nu** |
 | 2 | Staan | 60 s | |
 | 3 | Lopen (rustig) | 60 s | |
 | 4 | Armen bewegen | 30 s | |
-| 5 | Springen | 30 s | |
-| 6 | Herstel (rustig zitten) | 60 s | |
+| 5 | Traplopen | 30 s | |
+| 6 | Zitten | 60 s | herstel: rustig zitten, de hartslag daalt weer |
 
-Gebeurt er iets onverwachts, zoals een elektrode die loslaat of een kabel die je raakt? Klik dan meteen op een
-**moment** (of op **Markeer nu**) en pas de omschrijving later aan. Fout geklikt? Corrigeer het in het logboek
+Gebeurt er iets onverwachts, zoals een elektrode die loslaat of een kabel die je raakt? Klik dan meteen op
+**Markeer nu** en pas de omschrijving later aan. Fout geklikt? Corrigeer het in het logboek
 onderaan de pagina.
 
-De app heeft meer activiteiten en momenten dan dit programma gebruikt, bijvoorbeeld liggen, traplopen,
-praten en bukken. Die lijsten staan in `streamlit/config/activiteiten.txt` en `momenten.txt`, en je mag ze
+De app heeft meer activiteiten en momenten dan dit programma gebruikt, bijvoorbeeld liggen en
+traplopen. Die lijsten staan in `streamlit/config/activiteiten.txt` en `momenten.txt`, en je mag ze
 aanvullen.
 
 > **Zoek zelf uit**

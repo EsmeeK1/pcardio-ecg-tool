@@ -123,7 +123,7 @@ streamlit/
 | Kolom | Betekenis |
 |---|---|
 | `soort` | `periode`, `moment` of `sync` |
-| `label` | activiteit of moment, bijv. `Lopen (rustig)`, `Hoest` |
+| `label` | activiteit of moment, bijv. `Lopen (rustig)`, `markering` |
 | `t_start`, `t_eind` | ISO 8601 met tijdzone; `t_eind` leeg bij een moment |
 | `tijdbasis` | `pc` = live gelogd met de pc-klok (klokcorrectie wordt erbij opgeteld), `data` = achteraf in P-Cardio-tijd |
 | `opmerking` | vrije tekst |
