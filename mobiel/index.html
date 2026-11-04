@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Annotaties">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>P-Cardio annotaties</title>
+<style>
+  :root { color-scheme: light dark; --rood: #c62828; --vlak: color-mix(in srgb, CanvasText 10%, Canvas); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 12px max(24px, env(safe-area-inset-bottom));
+    font: 17px -apple-system, system-ui, sans-serif; background: Canvas; color: CanvasText;
+  }
+  header {
+    position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 8px;
+    padding: max(12px, env(safe-area-inset-top)) 0 10px; background: Canvas; border-bottom: 1px solid var(--vlak);
+  }
+  #klok { font-variant-numeric: tabular-nums; }
+  #bezig { text-align: right; font-variant-numeric: tabular-nums; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; margin: 22px 0 6px; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button {
+    touch-action: manipulation; border: 0; border-radius: 12px; padding: 14px 8px; background: var(--vlak);
+  }
+  button:active { opacity: .5; }
+  button:disabled { opacity: .35; }
+  .raster { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actief, #sync { background: var(--rood); color: white; font-weight: 600; }
+  #sync { width: 100%; margin-top: 12px; padding: 18px 8px; }
+  .breed { width: 100%; margin-top: 8px; }
+  form { display: flex; gap: 8px; margin-top: 8px; }
+  input, textarea {
+    flex: 1; min-width: 0; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--vlak);
+    background: transparent;
+  }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--vlak); }
+  li span { flex: 1; font-variant-numeric: tabular-nums; }
+  li button { padding: 6px 14px; }
+  details { margin-top: 22px; }
+  label { display: block; margin-top: 10px; font-size: 15px; }
+  .uitleg { font-size: 14px; opacity: .7; }
+  #melding {
+    position: fixed; left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); padding: 14px;
+    border-radius: 12px; background: CanvasText; color: Canvas; text-align: center; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<header><strong id="klok"></strong><span id="bezig"></span></header>
+
+<button id="sync">Sync-sprong · tik bij het landen</button>
+<p class="uitleg">Spring één keer en tik precies als je landt. Doe dit aan het begin en liefst ook aan het eind.</p>
+
+<h2>Activiteiten</h2>
+<div id="activiteiten" class="raster"></div>
+<form id="vrije-periode"><input id="vrij" placeholder="Andere activiteit…" enterkeyhint="go"><button>Start</button></form>
+<button id="stop" class="breed">Stop periode</button>
+
+<h2>Momenten</h2>
+<div id="momenten" class="raster"></div>
+<form id="vrij-moment-form"><input id="vrij-moment" placeholder="Ander moment…" enterkeyhint="go"><button>Markeer</button></form>
+
+<h2>Logboek</h2>
+<ul id="logboek"></ul>
+<div class="raster" style="margin-top: 12px">
+  <button id="exporteer">Exporteer CSV</button><button id="wis">Nieuwe sessie</button>
+</div>
+<p class="uitleg">
+  Exporteren stopt de lopende periode. Laad de CSV op de pc in via <b>Koppelen</b>, samen met de P-Cardio-bestanden.
+  Exporteer na elke sessie: een iPhone kan de opgeslagen gegevens van web-apps wissen.
+</p>
+
+<details>
+  <summary>Knoppen aanpassen</summary>
+  <label>Activiteiten, één per regel<textarea id="lijst-activiteiten" rows="10"></textarea></label>
+  <label>Momenten, één per regel<textarea id="lijst-momenten" rows="4"></textarea></label>
+</details>
+
+<div id="melding" hidden></div>
+
+<script type="module">
+import { actief, iso, moment, naarCsv, startPeriode, stopPeriode, sync, verwijder } from "./annotaties.js";
+
+const SLEUTEL = "pcardio-annotaties";
+const STANDAARD = {
+  lijst: [],
+  // Zelfde startlijst als streamlit/config/activiteiten.txt; aanpassen kan in de app.
+  activiteiten: [
+    "Zitten", "Zitten (achterover)", "Staan", "Staan (bezig)", "Half liggend", "Liggen op de rug",
+    "Liggen op de zij (links)", "Liggen op de zij (rechts)", "Armen bewegen", "Lopen (rustig)", "Traplopen", "Plakker los",
+  ],
+  momenten: [],
+};
+
+let staat;
+try {
+  staat = { ...STANDAARD, ...JSON.parse(localStorage.getItem(SLEUTEL)) };
+} catch {
+  staat = { ...STANDAARD };
+}
+navigator.storage?.persist?.();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+
+const $ = (id) => document.getElementById(id);
+const tijd = (ms) => new Date(ms).toLocaleTimeString("nl-NL");
+const duur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const regels = (tekst) => [...new Set(tekst.split("\n").map((r) => r.trim()).filter(Boolean))];
+
+function wijzig(actie) {
+  actie();
+  try {
+    localStorage.setItem(SLEUTEL, JSON.stringify(staat));
+  } catch (fout) {
+    alert(`Opslaan mislukt: ${fout.message}. Exporteer nu.`);
+  }
+  teken();
+}
+
+function melding(tekst) {
+  const m = $("melding");
+  m.textContent = tekst;
+  m.hidden = false;
+  clearTimeout(m.timer);
+  m.timer = setTimeout(() => (m.hidden = true), 2000);
+}
+
+// Het tijdstip is het moment van tikken: Date.now() staat steeds als eerste in de handler.
+function periode(label) {
+  const t = Date.now();
+  wijzig(() => startPeriode(staat.lijst, label, t));
+  melding(`▶ ${label} · ${tijd(t)}`);
+}
+
+function markeer(label) {
+  const t = Date.now();
+  wijzig(() => moment(staat.lijst, label, t));
+  melding(`● ${label} · ${tijd(t)}`);
+}
+
+function knoppen(el, labels, klik, actiefLabel) {
+  el.replaceChildren(...labels.map((label) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (label === actiefLabel) b.className = "actief";
+    b.onclick = () => klik(label);
+    return b;
+  }));
+}
+
+function regel(a) {
+  const li = document.createElement("li");
+  const tekst = document.createElement("span");
+  const icoon = { periode: "▶", moment: "●", sync: "⇅" }[a.soort];
+  const extra = a.soort !== "periode" ? "" : a.t_eind == null ? " · bezig" : ` · ${duur((a.t_eind - a.t_start) / 1000)}`;
+  tekst.textContent = `${tijd(a.t_start)} ${icoon} ${a.label}${extra}`;
+  const weg = document.createElement("button");
+  weg.textContent = "×";
+  weg.ariaLabel = `Verwijder ${a.label}`;
+  weg.onclick = () => confirm(`"${a.label}" van ${tijd(a.t_start)} verwijderen?`) && wijzig(() => verwijder(staat.lijst, a.id));
+  li.append(tekst, weg);
+  return li;
+}
+
+function klok() {
+  const a = actief(staat.lijst);
+  $("klok").textContent = new Date().toLocaleTimeString("nl-NL");
+  $("bezig").textContent = a ? `▶ ${a.label} · ${duur((Date.now() - a.t_start) / 1000)}` : "Geen periode";
+}
+
+function teken() {
+  const a = actief(staat.lijst);
+  knoppen($("activiteiten"), staat.activiteiten, periode, a?.label);
+  knoppen($("momenten"), ["Markeer nu", ...staat.momenten], (l) => markeer(l === "Markeer nu" ? "markering" : l));
+  $("stop").disabled = !a;
+  $("exporteer").disabled = $("wis").disabled = !staat.lijst.length;
+  $("logboek").replaceChildren(...staat.lijst.slice().reverse().map(regel));
+  $("lijst-activiteiten").value = staat.activiteiten.join("\n");
+  $("lijst-momenten").value = staat.momenten.join("\n");
+  klok();
+}
+
+async function exporteer() {
+  wijzig(() => stopPeriode(staat.lijst));
+  const start = iso(new Date(staat.lijst[0].t_start));  // 2026-11-04T19:03… → annotaties_2026-11-04_1903.csv
+  const naam = `annotaties_${start.slice(0, 10)}_${start.slice(11, 13)}${start.slice(14, 16)}.csv`;
+  const bestand = new File([naarCsv(staat.lijst)], naam, { type: "text/csv" });
+  if (navigator.canShare?.({ files: [bestand] })) {
+    try {
+      await navigator.share({ files: [bestand] });
+    } catch (fout) {
+      if (fout.name !== "AbortError") alert(`Delen mislukt: ${fout.message}`);
+    }
+  } else {
+    Object.assign(document.createElement("a"), { href: URL.createObjectURL(bestand), download: naam }).click();
+  }
+}
+
+$("sync").onclick = () => {
+  const t = Date.now();
+  wijzig(() => sync(staat.lijst, t));
+  melding(`⇅ Sync-sprong · ${tijd(t)}`);
+};
+$("stop").onclick = () => {
+  const t = Date.now();
+  wijzig(() => stopPeriode(staat.lijst, t));
+  melding(`■ Gestopt · ${tijd(t)}`);
+};
+$("vrije-periode").onsubmit = (e) => {
+  e.preventDefault();
+  const label = $("vrij").value.trim();
+  if (!label) return;
+  if (!staat.activiteiten.includes(label)) staat.activiteiten.push(label);  // gym-oefeningen komen vaker terug
+  $("vrij").value = "";
+  $("vrij").blur();
+  periode(label);
+};
+$("vrij-moment-form").onsubmit = (e) => {
+  e.preventDefault();
+  const label = $("vrij-moment").value.trim();
+  if (!label) return;
+  $("vrij-moment").value = "";
+  $("vrij-moment").blur();
+  markeer(label);
+};
+$("exporteer").onclick = exporteer;
+$("wis").onclick = () =>
+  confirm("Alle annotaties wissen? Exporteer eerst als je ze nog nodig hebt.") && wijzig(() => (staat.lijst = []));
+$("lijst-activiteiten").onchange = (e) => wijzig(() => (staat.activiteiten = regels(e.target.value)));
+$("lijst-momenten").onchange = (e) => wijzig(() => (staat.momenten = regels(e.target.value)));
+
+teken();
+setInterval(klok, 1000);
+</script>
+</body>
+</html>

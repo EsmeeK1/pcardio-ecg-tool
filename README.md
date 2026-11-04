@@ -28,6 +28,19 @@ Krijg je `UnauthorizedAccess` bij het activeren? Voer eenmalig uit:
 | `streamlit/` | de app: pagina's, `kern/` (logica zonder Streamlit), tests |
 | `scripts/probe_device.py` | losse hardwaretest van dongle en recorder, buiten de app om |
 | `docs/` | [opnameprotocol](docs/opnameprotocol-p-cardio.md) en handleidingen van de P-Cardio |
+| `mobiel/` | web-app voor de telefoon: annoteren zonder pc, bijv. in de sportschool (zie hieronder) |
+
+## Annoteren op je telefoon
+
+`mobiel/` is een web-app voor perioden, momenten en sync-sprongen zonder pc. Hij werkt offline. GitHub Pages host
+hem op <https://esmeek1.github.io/pcardio-ecg-tool/mobiel/> (Settings → Pages → branch `main`, map `/ (root)`).
+
+1. Open de link op de iPhone in Safari: Deel-knop → **Zet op beginscherm**.
+2. Na de sessie: **Exporteer CSV** → stuur hem naar jezelf.
+3. Op de pc: pagina **Koppelen** → upload de P-Cardio-bestanden én de CSV tegelijk.
+
+De tijden komen van de telefoonklok (`tijdbasis` = `pc`), dus doe een sync-sprong in de app. Test:
+`streamlit/tests/test_mobiel.py` (vereist `node`).
 
 `streamlit/data/` bevat deelnemers- en opnamegegevens en staat in `.gitignore`. Uitzondering: de oefendata
 in `streamlit/data/test/` gaat wel mee, zodat je meteen een oefenopname kunt maken.
