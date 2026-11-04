@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from kern.pcardio import DATATYPES, GAINS, SAMPLE_RATES, combineer, lees_bestand, lees_csv
+from kern.pcardio import APPARAAT_TZ, DATATYPES, GAINS, SAMPLE_RATES, combineer, lees_bestand, lees_csv
 
 # Map met een echte P-Cardio-export (Ecg_2Ch.csv); in te stellen via ECG_TOOL_TESTDATA.
 ECHTE_CSV = Path(os.environ.get("ECG_TOOL_TESTDATA", "")) / "Ecg_2Ch.csv"
@@ -124,13 +124,27 @@ def test_binair_heen_en_terug(tmp_path: Path) -> None:
     assert ecg.kanalen == ["Ecg1", "Ecg2"]
     np.testing.assert_allclose(ecg.data[["Ecg1", "Ecg2"]].to_numpy(), verwacht["ecg"], atol=1e-3)
     assert ecg.fs == pytest.approx(250, rel=0.01)
-    # pakkettijd = laatste sample van het pakket; het apparaat staat op Nederlandse kloktijd
-    assert ecg.data["tijd"].iloc[49] == pd.to_datetime(t0, unit="s").tz_localize("Europe/Amsterdam").tz_convert("UTC")
+    # pakkettijd = laatste sample van het pakket; de klok van het apparaat heeft een vaste offset (APPARAAT_TZ)
+    assert ecg.data["tijd"].iloc[49] == pd.to_datetime(t0, unit="s").tz_localize(APPARAAT_TZ).tz_convert("UTC")
 
     acc = per_naam["acc"]
     np.testing.assert_allclose(acc.data[["AccX", "AccY", "AccZ"]].to_numpy(), verwacht["acc"], atol=1e-3)
     assert acc.fs == pytest.approx(100, rel=0.01)
     np.testing.assert_array_equal(per_naam["lead_off"].data["LeadOff"].to_numpy(), verwacht["lead_off"])
+
+
+@pytest.mark.parametrize(
+    ("apparaatklok", "echte_tijd"),
+    [
+        ("2026-11-04 21:02:13", "2026-11-04 20:02:13"),  # winter: klok staat nog op zomertijd, een uur terug
+        ("2026-10-06 17:14:37", "2026-10-06 17:14:37"),  # zomer: klok klopt
+    ],
+)
+def test_apparaatklok_vast_op_zomertijd(tmp_path: Path, apparaatklok: str, echte_tijd: str) -> None:
+    pad = tmp_path / "data.txt"
+    _maak_binair(pad, int(pd.Timestamp(apparaatklok).timestamp()), seconden=1)
+    ecg = {s.naam: s for s in lees_bestand(pad)[0]}["ecg"]
+    assert ecg.data["tijd"].iloc[49] == pd.Timestamp(echte_tijd, tz="Europe/Amsterdam")
 
 
 def test_binair_verkeerde_prefix(tmp_path: Path) -> None:

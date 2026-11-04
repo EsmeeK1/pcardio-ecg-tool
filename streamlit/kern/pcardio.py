@@ -177,8 +177,12 @@ _PAKKETTEN_PER_SECONDE = 5
 _TICKS_PER_SECONDE = 32768
 _CRC_STEEKPROEF = 50  # aantal pakketten waarvan de checksum gecontroleerd wordt
 # De PCardio-software van 2M zet de klok van het apparaat op lokale kloktijd, niet op UTC (zoals de
-# handleiding suggereert): bestandsnaam en tijdstempels komen overeen met de Nederlandse kloktijd.
-APPARAAT_TZ = "Europe/Amsterdam"
+# handleiding suggereert): bestandsnaam en tijdstempels komen overeen met de Nederlandse kloktijd van dát moment.
+# Het apparaat schakelt zelf niet om naar winter-/zomertijd, dus de klok houdt een vaste offset.
+# ponytail: vaste UTC+2 (zomertijd) omdat de klok in de zomer van 2026 is gezet; in de winter liep de data anders
+# een uur vóór (gemeten op 3 en 4 november). Is de klok opnieuw gezet met de PCardio-software? Zet dit dan op de
+# offset van dat moment: "Etc/GMT-1" in de winter, "Etc/GMT-2" in de zomer (Etc-tekens zijn omgedraaid).
+APPARAAT_TZ = "Etc/GMT-2"
 
 GAINS = [1, 2, 3, 4, 6, 8, 12, 16]
 SAMPLE_RATES = [1000, 800, 500, 400, 250, 200, 100, 50, 25, 10, 5]

@@ -344,7 +344,9 @@ if opname is not None:
     elif "acc" not in signalen_opname:
         st.info("Geen accelerometerdata om de sync-sprong in te zoeken. Vul de correctie handmatig in.")
     else:
-        zoek_s = st.slider("Zoekvenster rond elk sync-moment (± s)", 1.0, 30.0, 5.0, 0.5, help=hulp.ZOEKVENSTER)
+        # Standaard ±120 s: de klok van de P-Cardio loopt ruim een minuut uit (+76 s op 4 nov 2026). Met ±5 s viel
+        # de echte sprong buiten het venster en werd een kleine beweging als "duidelijke" piek gekozen.
+        zoek_s = st.slider("Zoekvenster rond elk sync-moment (± s)", 1.0, 300.0, 120.0, 0.5, help=hulp.ZOEKVENSTER)
         resultaten = []
         for sync in syncs:
             resultaat = zoek_sync(signalen_opname["acc"].data, sync.t_start, zoek_s)
@@ -371,7 +373,10 @@ if opname is not None:
                 opname.zet_klokcorrectie(round(voorstel, 3), "sync")
                 st.rerun()
         elif resultaten:
-            st.warning("Geen duidelijke piek gevonden. Controleer de plot en vul de correctie handmatig in.")
+            st.warning(
+                "Geen duidelijke piek gevonden. Vergroot het zoekvenster (de P-Cardio-klok loopt soms meer dan een "
+                "minuut uit), of controleer de plot en vul de correctie handmatig in.",
+            )
 
     with st.form("handmatig"):
         waarde = st.number_input(
