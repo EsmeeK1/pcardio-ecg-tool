@@ -1,7 +1,7 @@
 // Offline in de sportschool: antwoord direct uit de cache en ververs die op de achtergrond.
 // Een nieuwe versie is daardoor pas bij de tweede keer openen zichtbaar.
 const CACHE = "pcardio-annotaties";
-const BESTANDEN = ["./", "index.html", "annotaties.js", "manifest.webmanifest", "icon.png"];
+const BESTANDEN = ["./", "index.html", "annotaties.js", "live.html", "pcardio.js", "manifest.webmanifest", "icon.png"];
 
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(BESTANDEN))));
 

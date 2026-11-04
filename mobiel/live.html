@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>P-Cardio live</title>
+<style>
+  :root { color-scheme: light dark; --rood: #c62828; --vlak: color-mix(in srgb, CanvasText 10%, Canvas); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: max(12px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom));
+    font: 17px -apple-system, system-ui, sans-serif; background: Canvas; color: CanvasText;
+  }
+  a { color: inherit; }
+  button {
+    font: inherit; color: inherit; touch-action: manipulation; border: 0; border-radius: 12px; padding: 14px 8px;
+    background: var(--vlak);
+  }
+  button:active { opacity: .5; }
+  button:disabled { opacity: .35; }
+  .raster { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+  #verbind { background: var(--rood); color: white; font-weight: 600; }
+  #status { font-size: 15px; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  #melding { color: var(--rood); font-size: 15px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; margin: 18px 0 4px; }
+  canvas { width: 100%; height: 170px; display: block; border-radius: 8px; background: var(--vlak); }
+  .uitleg { font-size: 14px; opacity: .7; }
+</style>
+</head>
+<body>
+<a href="./">← Annotaties</a>
+<div class="raster">
+  <button id="verbind">Verbind</button><button id="stream" disabled>Stop</button><button id="los" disabled>Ontkoppel</button>
+</div>
+<div id="status">Niet verbonden</div>
+<div id="melding"></div>
+
+<section id="ecg" hidden><h2>ECG (mV, gefilterd 0,5–40 Hz)</h2><canvas></canvas></section>
+<section id="acc" hidden><h2>Accelerometer (g)</h2><canvas></canvas></section>
+<section id="gyro" hidden><h2>Gyroscoop (graden/s)</h2><canvas></canvas></section>
+
+<p class="uitleg">
+  Alleen kijken: er wordt niets opgeslagen. Op de iPhone werkt Bluetooth alleen in de app <b>Bluefy</b>, niet in
+  Safari. De P-Cardio kan met één apparaat tegelijk verbonden zijn: ontkoppel de dongle eerst.
+</p>
+
+<script type="module">
+import {
+  ABORT, CONFIG_ADRES, CONFIG_LENGTE, CoreStroom, NUS, PIN, PIN_ADRES, RX, STREAM_ADRES, Samenvoeger, TX,
+  dataPakket, decodeerConfig, leesPakket, pakketgrootte, parseDatapakket, streamPakket,
+} from "./pcardio.js";
+
+const VENSTER_S = 10;
+const KLEUREN = ["#e53935", "#1e88e5", "#43a047"];
+const $ = (id) => document.getElementById(id);
+const wacht = (ms) => new Promise((klaar) => setTimeout(klaar, ms));
+
+let apparaat, rx, stroom, wachtend, samen, configs, plots = {};
+let tellers = { pakketten: 0, fouten: 0 }, recorder = {}, ontkoppeld = false;
+
+function melding(tekst) {
+  $("melding").textContent = tekst;
+}
+
+function knoppen(toestand) {
+  $("verbind").disabled = toestand !== "los";
+  $("stream").disabled = $("los").disabled = toestand === "los";
+  $("stream").textContent = toestand === "streamt" ? "Stop" : "Start";
+}
+
+function toonStatus() {
+  if (!apparaat?.gatt.connected) return;
+  const delen = [samen ? "streamt" : "verbonden"];
+  if (recorder.logt !== undefined) delen.push(recorder.logt ? "neemt op" : "neemt niet op");
+  if (recorder.batterij !== undefined) delen.push(`batterij ${recorder.batterij}%`);
+  if (recorder.leadOff) delen.push("⚠ draad los");
+  delen.push(`${tellers.pakketten} pakketten`);
+  if (tellers.fouten) delen.push(`${tellers.fouten} fout`);
+  $("status").textContent = delen.join(" · ");
+}
+
+// Causaal filter voor de weergave (de Streamlit-app gebruikt een zero-phase Butterworth; live kan dat niet):
+// twee keer een eerste-orde hoogdoorlaat 0,5 Hz tegen drift, en een laagdoorlaat 40 Hz tegen ruis.
+function ecgFilter(fs) {
+  const dt = 1 / fs, rcH = 1 / (2 * Math.PI * 0.5), rcL = 1 / (2 * Math.PI * 40);
+  const a = rcH / (rcH + dt), b = dt / (rcL + dt);
+  let vorige = null, hoog1 = 0, vorige1 = 0, hoog2 = 0, laag = 0;
+  return (x) => {
+    hoog1 = a * (hoog1 + x - (vorige ?? x));
+    vorige = x;
+    hoog2 = a * (hoog2 + hoog1 - vorige1);
+    vorige1 = hoog1;
+    laag += b * (hoog2 - laag);
+    return laag;
+  };
+}
+
+function maakPlots() {
+  plots = {};
+  for (const id of ["ecg", "acc", "gyro"]) $(id).hidden = true;
+  for (const c of configs) {
+    if (!["ecg", "acc", "gyro"].includes(c.naam)) continue;
+    $(c.naam).hidden = false;
+    plots[c.naam] = {
+      fs: c.fs,
+      kanalen: c.kanalen,
+      reeksen: c.kanalen.map(() => []),
+      filters: c.naam === "ecg" ? c.kanalen.map(() => ecgFilter(c.fs)) : null,
+      canvas: $(c.naam).querySelector("canvas"),
+    };
+  }
+}
+
+function verwerk(pakket) {
+  let data;
+  try {
+    data = parseDatapakket(pakket, configs);
+  } catch {
+    tellers.fouten++;
+    return;
+  }
+  if (!data.crcOk) {
+    tellers.fouten++;
+    return;
+  }
+  tellers.pakketten++;
+  recorder.logt = Boolean(data.status & 1);
+  for (const [c, waarden] of data.sensoren) {
+    const plot = plots[c.naam];
+    if (plot) {
+      const max = VENSTER_S * plot.fs;
+      plot.reeksen.forEach((reeks, k) => {
+        for (const rij of waarden) reeks.push(plot.filters ? plot.filters[k](rij[k]) : rij[k]);
+        if (reeks.length > max) reeks.splice(0, reeks.length - max);
+      });
+    } else if (c.naam === "lead_off") {
+      recorder.leadOff = waarden.some((rij) => rij[0] > 0.5);
+    } else if (c.naam === "batterij") {
+      recorder.batterij = Math.round(waarden.at(-1)[0]);
+    }
+  }
+}
+
+function ontvang(e) {
+  const v = e.target.value;
+  for (const stuk of stroom.voegToe(new Uint8Array(v.buffer, v.byteOffset, v.byteLength))) {
+    if (stuk.adres >= STREAM_ADRES) {
+      const pakket = samen?.voegToe(stuk);
+      if (pakket) verwerk(pakket);
+    } else if (wachtend) {
+      const blok = wachtend.samen.voegToe(stuk);
+      if (blok) wachtend.klaar(blok);
+    }
+  }
+}
+
+/** Core-verzoek (lezen of schrijven); het antwoord komt als Data-pakket(ten) op hetzelfde adres. */
+function verzoek(pakket, adres, lengte) {
+  return new Promise((klaar, mislukt) => {
+    const timer = setTimeout(() => {
+      wachtend = null;
+      mislukt(new Error(`Geen antwoord van de recorder (adres ${adres}).`));
+    }, 3000);
+    wachtend = {
+      samen: new Samenvoeger(adres, lengte),
+      klaar: (blok) => {
+        clearTimeout(timer);
+        wachtend = null;
+        klaar(blok);
+      },
+    };
+    rx.writeValue(pakket).catch((fout) => {
+      clearTimeout(timer);
+      wachtend = null;
+      mislukt(fout);
+    });
+  });
+}
+
+async function verbind() {
+  melding("");
+  if (!navigator.bluetooth) {
+    melding("Deze browser kan geen Bluetooth. Open deze pagina in Bluefy (iPhone) of Chrome/Edge (Android, pc).");
+    return;
+  }
+  try {
+    apparaat = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "PCardio" }, { services: [NUS] }],
+      optionalServices: [NUS],
+    });
+    ontkoppeld = false;
+    apparaat.addEventListener("gattserverdisconnected", () => {
+      samen = null;
+      knoppen("los");
+      $("status").textContent = ontkoppeld ? "Niet verbonden" : "Verbinding verbroken: tik op Verbind";
+    });
+    $("status").textContent = "Verbinden…";
+    const dienst = await (await apparaat.gatt.connect()).getPrimaryService(NUS);
+    rx = await dienst.getCharacteristic(RX);
+    const tx = await dienst.getCharacteristic(TX);
+    stroom = new CoreStroom();
+    tx.addEventListener("characteristicvaluechanged", ontvang);
+    await tx.startNotifications();
+    await rx.writeValue(ABORT); // streamt de recorder nog van een vorige keer? Eerst stoppen.
+    await wacht(300);
+    stroom = new CoreStroom();
+    await verzoek(dataPakket(PIN_ADRES, PIN), PIN_ADRES, PIN.length);
+    configs = decodeerConfig(await verzoek(leesPakket(CONFIG_ADRES, CONFIG_LENGTE), CONFIG_ADRES, CONFIG_LENGTE));
+    if (!configs.some((c) => c.naam === "ecg")) melding("De recorder meet nu geen ECG.");
+    await start();
+  } catch (fout) {
+    if (fout.name !== "NotFoundError") melding(`Verbinden mislukt: ${fout.message}`); // NotFoundError = geannuleerd
+    apparaat?.gatt.disconnect();
+    knoppen("los");
+    $("status").textContent = "Niet verbonden";
+  }
+}
+
+async function start() {
+  maakPlots();
+  tellers = { pakketten: 0, fouten: 0 };
+  samen = new Samenvoeger(STREAM_ADRES, pakketgrootte(configs));
+  await rx.writeValue(streamPakket(pakketgrootte(configs)));
+  knoppen("streamt");
+  navigator.wakeLock?.request("screen").catch(() => {}); // scherm aan houden, anders valt Bluetooth weg
+}
+
+async function stop() {
+  samen = null;
+  await rx.writeValue(ABORT);
+  knoppen("verbonden");
+  $("status").textContent = "Verbonden, gestopt";
+}
+
+function teken(plot) {
+  const { canvas, reeksen, fs } = plot;
+  const schaal = devicePixelRatio, b = canvas.clientWidth * schaal, h = canvas.clientHeight * schaal;
+  if (canvas.width !== b || canvas.height !== h) Object.assign(canvas, { width: b, height: h });
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, b, h);
+  const n = reeksen[0].length;
+  if (n < 2) return;
+  // Schaal op min/max van de laatste 2 s: R-toppen blijven heel, en het inzwaaien bij de start telt niet lang mee.
+  let min = Infinity, max = -Infinity;
+  for (const reeks of reeksen) for (const w of reeks.slice(-2 * fs)) [min, max] = [Math.min(min, w), Math.max(max, w)];
+  const marge = 0.1 * (max - min) + 1e-3;
+  [min, max] = [min - marge, max + marge];
+  const x = (i) => b - ((n - 1 - i) / (VENSTER_S * fs - 1)) * b;
+  const y = (w) => h - ((w - min) / (max - min)) * h;
+  ctx.lineWidth = 1.2 * schaal;
+  reeksen.forEach((reeks, k) => {
+    ctx.strokeStyle = KLEUREN[k % KLEUREN.length];
+    ctx.beginPath();
+    reeks.forEach((w, i) => (i ? ctx.lineTo(x(i), y(w)) : ctx.moveTo(x(i), y(w))));
+    ctx.stroke();
+  });
+  ctx.fillStyle = getComputedStyle(document.body).color;
+  ctx.font = `${11 * schaal}px system-ui`;
+  ctx.fillText(max.toPrecision(3), 4 * schaal, 12 * schaal);
+  ctx.fillText(min.toPrecision(3), 4 * schaal, h - 4 * schaal);
+  plot.kanalen.forEach((naam, k) => {
+    ctx.fillStyle = KLEUREN[k % KLEUREN.length];
+    ctx.fillText(naam, b - (48 * (plot.kanalen.length - k)) * schaal, 12 * schaal);
+  });
+}
+
+function lus() {
+  Object.values(plots).forEach(teken);
+  toonStatus();
+  requestAnimationFrame(lus);
+}
+
+$("verbind").onclick = verbind;
+$("stream").onclick = () => (samen ? stop() : start()).catch((fout) => melding(fout.message));
+$("los").onclick = async () => {
+  ontkoppeld = true;
+  if (samen) await stop().catch(() => {});
+  apparaat?.gatt.disconnect();
+};
+knoppen("los");
+requestAnimationFrame(lus);
+</script>
+</body>
+</html>

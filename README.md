@@ -42,6 +42,9 @@ hem op <https://esmeek1.github.io/pcardio-ecg-tool/mobiel/> (Settings → Pages 
 De tijden komen van de telefoonklok (`tijdbasis` = `pc`), dus doe een sync-sprong in de app. Test:
 `streamlit/tests/test_mobiel.py` (vereist `node`).
 
+`mobiel/live.html` toont live ECG, acc en gyro via de Bluetooth van de telefoon, zonder dongle (alleen kijken). Safari
+kan geen Bluetooth: open de pagina op de iPhone in de gratis app **Bluefy**. Op Android en de pc werkt Chrome/Edge.
+
 `streamlit/data/` bevat deelnemers- en opnamegegevens en staat in `.gitignore`. Uitzondering: de oefendata
 in `streamlit/data/test/` gaat wel mee, zodat je meteen een oefenopname kunt maken.
 
