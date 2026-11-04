@@ -23,6 +23,9 @@
   .raster { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
   #verbind { background: var(--rood); color: white; font-weight: 600; }
   #status { font-size: 15px; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  #opname { padding: 12px; border-radius: 12px; text-align: center; font-weight: 600; margin-bottom: 8px; }
+  #opname.aan { background: var(--rood); color: white; }
+  #opname.uit { background: #f9a825; color: black; }
   #melding { color: var(--rood); font-size: 15px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; margin: 18px 0 4px; }
   canvas { width: 100%; height: 170px; display: block; border-radius: 8px; background: var(--vlak); }
@@ -34,6 +37,7 @@
 <div class="raster">
   <button id="verbind">Verbind</button><button id="stream" disabled>Stop</button><button id="los" disabled>Ontkoppel</button>
 </div>
+<div id="opname" hidden></div>
 <div id="status">Niet verbonden</div>
 <div id="melding"></div>
 
@@ -71,9 +75,13 @@ function knoppen(toestand) {
 }
 
 function toonStatus() {
+  const opname = $("opname");
+  opname.hidden = !apparaat?.gatt.connected || recorder.logt === undefined;
   if (!apparaat?.gatt.connected) return;
+  // Statusbit 0 van elk datapakket (§6.1.3): ziet ook starten/stoppen met de knop op de recorder.
+  opname.className = recorder.logt ? "aan" : "uit";
+  opname.textContent = (recorder.logt ? "● P-Cardio neemt op" : "P-Cardio neemt NIET op") + (samen ? "" : " (laatst bekend)");
   const delen = [samen ? "streamt" : "verbonden"];
-  if (recorder.logt !== undefined) delen.push(recorder.logt ? "neemt op" : "neemt niet op");
   if (recorder.batterij !== undefined) delen.push(`batterij ${recorder.batterij}%`);
   if (recorder.leadOff) delen.push("⚠ draad los");
   delen.push(`${tellers.pakketten} pakketten`);
@@ -191,6 +199,7 @@ async function verbind() {
       optionalServices: [NUS],
     });
     ontkoppeld = false;
+    recorder = {};
     apparaat.addEventListener("gattserverdisconnected", () => {
       samen = null;
       knoppen("los");
