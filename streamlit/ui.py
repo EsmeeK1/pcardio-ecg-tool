@@ -12,10 +12,47 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
+import hulp
 from kern.live_sessie import LiveSessie
 from kern.opslag import DATA_ROOT, WEERGAVE_TZ, Deelnemers, Opname
 from kern.pcardio import Signaal
-from kern.plots import live_ecg, markeer_venster, overzicht
+from kern.beweging import LIVE_STAP_S, SEGMENT_S, beweging_nu
+from kern.plots import live_beweging, live_ecg, markeer_venster, overzicht
+
+
+STANDAARD_CONFIGURATIE = (
+    "ECG 2-kanaals 250 Hz gain x6; Acc 100 Hz x2; Gyro 100 Hz x2; Lead-off 5 Hz; Button Marker 5 Hz; Battery 5 Hz"
+)
+ELEKTRODE_PLAATSINGEN = ["Optie 1: met sticker", "Optie 2: met lanyard"]
+ELEKTRODE_FOTO = Path(__file__).resolve().parent / "assets" / "elektroden_plaatsing.png"
+
+
+def opname_velden(apparaat: str = "déze pc") -> dict[str, object]:
+    """Gegevens van een nieuwe opname, met dezelfde standaardwaarden op Live opname en Data koppelen. Geeft de
+    velden voor ``Opname.nieuw``. ``apparaat`` is waarmee geannoteerd is (pc of telefoon)."""
+    plaatsing, foto = st.columns([4, 1], vertical_alignment="bottom")
+    elektroden = plaatsing.selectbox(
+        "Plaatsing van de elektroden", ELEKTRODE_PLAATSINGEN, index=1, help=hulp.ELEKTRODEN,  # lanyard
+    )
+    with foto.popover("📷 Foto's", width="stretch"):
+        st.image(str(ELEKTRODE_FOTO), caption="Bron: handleiding P-Cardio (2M Engineering)")
+    huidvoorbereiding = st.text_input("Huidvoorbereiding / bijzonderheden (optioneel)", help=hulp.HUIDVOORBEREIDING)
+    configuratie = st.text_input("Meetconfiguratie P-Cardio", value=STANDAARD_CONFIGURATIE, help=hulp.CONFIGURATIE)
+    gelijkgezet = st.checkbox(
+        f"Tijd van de P-Cardio is vlak voor de opname gelijkgezet met {apparaat}", help=hulp.GELIJKGEZET,
+    )
+    experiment = st.text_input(
+        "Experiment (optioneel)", placeholder="bijv. Elektrodeplaatsing 21-10", help=hulp.EXPERIMENT,
+    )
+    notities = st.text_area("Notities", help=hulp.NOTITIES)
+    return {
+        "elektroden": elektroden,
+        "huidvoorbereiding": huidvoorbereiding.strip(),
+        "configuratie": configuratie.strip(),
+        "pcardio_tijd_gelijkgezet": gelijkgezet,
+        "notities": notities.strip(),
+        "experiment": experiment.strip(),
+    }
 
 
 @st.cache_data(show_spinner=False, max_entries=1)
@@ -200,6 +237,44 @@ def live_ecg_compact() -> None:
     fig = live_ecg_figuur(sessie, 5.0, hoogte=220)
     if fig is not None:
         st.plotly_chart(fig, width="stretch", key="live_ecg_compact", config={"displayModeBar": False})
+        live_beweging_weergave(sessie, 5.0, hoogte=180)
+
+
+def live_beweging_weergave(sessie: LiveSessie, venster_s: float, hoogte: int = 220) -> None:
+    """Onder het live-ECG: activiteit en houding (UC-1, laatste 20 s) en, als aangezet, de acc- en gyro-plot.
+    Leest de keuzes ``live_bevestiging``, ``live_acc`` en ``live_gyro`` uit de session state."""
+    if sessie.acc is not None:
+        tijd, acc = sessie.acc_buffer.lees()
+        bevestiging = st.session_state.get("live_bevestiging", "sticker")
+        # Elke LIVE_STAP_S opnieuw bepalen (glijdend venster, AI-01), niet bij elke verversing van de plot.
+        vorige = st.session_state.get("live_beweging")
+        if (vorige is None or vorige[1] != bevestiging or vorige[2]["activiteit"] == "onbekend"
+                or len(tijd) == 0 or not 0 <= tijd[-1] - vorige[0] < LIVE_STAP_S):  # < 0: nieuwe stream
+            st.session_state.live_beweging = (tijd[-1] if len(tijd) else 0.0, bevestiging,
+                                              beweging_nu(tijd, acc, sessie.acc_buffer.fs, bevestiging))
+        nu = st.session_state.live_beweging[2]
+        if nu["activiteit"] == "onbekend":
+            st.caption(f"Beweging en houding: nog {SEGMENT_S - len(tijd) / sessie.acc_buffer.fs:.0f} s data "
+                       "verzamelen…")
+        else:
+            houding = nu["houding"] if bevestiging == "sticker" else "onbekend (lanyard)"
+            st.markdown(
+                f"**Activiteit:** {nu['activiteit']} · **Houding:** {houding} · laatste {SEGMENT_S} s, "
+                f"elke {LIVE_STAP_S} s bijgewerkt",
+                help=f"sd |acc| {nu['acc_sd']:.3f} g · kanteling {nu['kanteling']:.0f}°. {hulp.BEWEGING}",
+            )
+    t_laatste = sessie.buffer.lees()[0][-1]
+    for naam, eenheid, buffer in (("acc", "g", sessie.acc_buffer), ("gyro", "°/s", sessie.gyro_buffer)):
+        if not st.session_state.get(f"live_{naam}"):
+            continue
+        t, w = buffer.lees()
+        if len(t) < 2:
+            st.caption(f"Geen {naam}-data: staat die in de configuratie van de recorder?")
+            continue
+        st.plotly_chart(
+            live_beweging(t, w, buffer.kanalen, venster_s, naam, eenheid, t_laatste, hoogte),
+            width="stretch", key=f"live_{naam}_plot", config={"displayModeBar": False},
+        )
 
 
 LOGO = Path(__file__).resolve().parent / "assets" / "appbakkers_logo.png"

@@ -16,7 +16,7 @@ from collections.abc import Callable
 import numpy as np
 
 from . import pcardio_protocol as p
-from .pcardio import SensorConfig
+from .pcardio import SENSOREN, SensorConfig
 
 BAUDRATE = 460800
 DONGLE_NAAM = "2M BLE Dongle"
@@ -305,6 +305,10 @@ class SimDongle(Dongle):
                 waarden.append(np.column_stack([ecg, 1.3 * ecg])[:, :c.datatype.elementen])
             elif c.sensor_id == p.BATTERIJ_SENSOR:
                 waarden.append(np.full((n, 1), 100.0))
+            elif SENSOREN.get(c.sensor_id) and SENSOREN[c.sensor_id].naam == "acc":
+                # Rechtop in rust (zwaartekracht langs −x, zie kern.beweging), met wat ruis.
+                waarden.append(np.column_stack([np.full(n, -1.0), np.zeros(n), np.zeros(n)])
+                               + np.random.default_rng().normal(0, 0.003, (n, 3)))
             else:
                 waarden.append(np.zeros((n, c.datatype.elementen)))
         status = 0b0011_1010 | self.logt  # streamt, BLE verbonden, batterij 75-100 % (zoals op de echte recorder)

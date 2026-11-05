@@ -9,7 +9,7 @@ import hulp
 from kern import pcardio_protocol as p
 from kern.dongle import SerieleDongle, SimDongle, poorten, zoek_dongle
 from kern.live_sessie import GEEN_DATA_S, LiveSessie
-from ui import live_ecg_figuur, live_houder, live_sessie, meld, toon_meldingen
+from ui import live_beweging_weergave, live_ecg_figuur, live_houder, live_sessie, meld, toon_meldingen
 
 GESIMULEERD, ECHT = "Gesimuleerd", "Echte dongle"
 TOESTANDEN = {
@@ -93,6 +93,10 @@ def instellingen() -> None:
         st.sidebar.number_input("± mV", min_value=0.1, max_value=500.0, value=2.0, step=0.5, key="live_ybereik")
     st.sidebar.checkbox("Filter 0,5–40 Hz", value=True, key="live_filter", help=hulp.LIVE_FILTER)
     st.sidebar.checkbox("50 Hz-notch", value=False, key="live_netbrom", help=hulp.LIVE_NETBROM)
+    st.sidebar.toggle("Accelerometer", value=False, key="live_acc", help=hulp.ACC)
+    st.sidebar.toggle("Gyroscoop", value=False, key="live_gyro", help=hulp.GYRO)
+    st.sidebar.radio("Bevestiging recorder", ["sticker", "lanyard"], key="live_bevestiging", horizontal=True,
+                     help=hulp.BEVESTIGING)
 
 
 @st.fragment(run_every=0.5)
@@ -188,8 +192,9 @@ def grafiek() -> None:
     )
     if fig is None:
         st.caption("Wachten op data…")
-    else:
-        st.plotly_chart(fig, width="stretch", key="live_ecg", config={"displayModeBar": False})
+        return
+    st.plotly_chart(fig, width="stretch", key="live_ecg", config={"displayModeBar": False})
+    live_beweging_weergave(sessie, st.session_state.get("live_venster", 10))
 
 
 @st.fragment(run_every=1)

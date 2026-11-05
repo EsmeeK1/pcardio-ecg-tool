@@ -10,13 +10,10 @@ import streamlit as st
 import hulp
 from kern.lijsten import lees_lijst
 from kern.opslag import DATA_ROOT, WEERGAVE_TZ, Deelnemers, Opname, nu
-from ui import annotatie_versie, deelnemer_naam, klok, knoppenraster, live_ecg_compact, meld, opname_label, toon_meldingen
-
-STANDAARD_CONFIGURATIE = (
-    "ECG 2-kanaals 250 Hz gain x6; Acc 100 Hz x2; Gyro 100 Hz x2; Lead-off 5 Hz; Button Marker 5 Hz; Battery 5 Hz"
+from ui import (
+    annotatie_versie, deelnemer_naam, klok, knoppenraster, live_ecg_compact, meld, opname_label, opname_velden,
+    toon_meldingen,
 )
-ELEKTRODE_PLAATSINGEN = ["Optie 1: met sticker", "Optie 2: met lanyard"]
-ELEKTRODE_FOTO = Path(__file__).resolve().parents[1] / "assets" / "elektroden_plaatsing.png"
 
 
 def _opname() -> Opname:
@@ -90,39 +87,10 @@ def startscherm() -> None:
                 deelnemer_id = st.selectbox(
                     "Deelnemer", list(per_id), format_func=lambda i: per_id[i].weergave, help=hulp.LIVE_DEELNEMER,
                 )
-                plaatsing, foto = st.columns([4, 1], vertical_alignment="bottom")
-                elektroden = plaatsing.selectbox(
-                    "Plaatsing van de elektroden", ELEKTRODE_PLAATSINGEN, index=1, help=hulp.ELEKTRODEN,  # lanyard
-                )
-                with foto.popover("📷 Foto's", width="stretch"):
-                    st.image(str(ELEKTRODE_FOTO), caption="Bron: handleiding P-Cardio (2M Engineering)")
-                huidvoorbereiding = st.text_input(
-                    "Huidvoorbereiding / bijzonderheden (optioneel)", help=hulp.HUIDVOORBEREIDING,
-                )
-                configuratie = st.text_input(
-                    "Meetconfiguratie P-Cardio", value=STANDAARD_CONFIGURATIE, help=hulp.CONFIGURATIE,
-                )
-                gelijkgezet = st.checkbox(
-                    "Tijd van de P-Cardio is vlak voor de opname gelijkgezet met déze pc",
-                    help=hulp.GELIJKGEZET,
-                )
-                experiment = st.text_input(
-                    "Experiment (optioneel)", placeholder="bijv. Elektrodeplaatsing 21-10", help=hulp.EXPERIMENT,
-                )
-                notities = st.text_area("Notities", help=hulp.NOTITIES)
+                velden = opname_velden()
                 if st.form_submit_button("Start opname", type="primary"):
                     try:
-                        opname = Opname.nieuw(
-                            per_id[deelnemer_id],
-                            nu(),
-                            root=DATA_ROOT,
-                            elektroden=elektroden,
-                            huidvoorbereiding=huidvoorbereiding.strip(),
-                            configuratie=configuratie.strip(),
-                            pcardio_tijd_gelijkgezet=gelijkgezet,
-                            notities=notities.strip(),
-                            experiment=experiment.strip(),
-                        )
+                        opname = Opname.nieuw(per_id[deelnemer_id], nu(), root=DATA_ROOT, **velden)
                         st.session_state.live_map = str(opname.map)
                         st.rerun()
                     except ValueError as fout:
@@ -178,6 +146,12 @@ def livescherm() -> None:
 
     toon_meldingen()
     status()
+    with st.sidebar:
+        st.subheader("Live weergave")
+        st.toggle("Accelerometer", value=False, key="live_acc", help=hulp.ACC)
+        st.toggle("Gyroscoop", value=False, key="live_gyro", help=hulp.GYRO)
+        st.radio("Bevestiging recorder", ["sticker", "lanyard"], key="live_bevestiging", horizontal=True,
+                 index=int("lanyard" in opname.info.elektroden.lower()), help=hulp.BEVESTIGING)
     live_ecg_compact()
 
     sync_kol, stop_kol, afsluit_kol = st.columns(3)

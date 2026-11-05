@@ -152,6 +152,16 @@ FILTER = (
 )
 ACC = "Accelerometer X/Y/Z en de grootte |acc| (zwart). Laat zien wanneer en hoe hard er bewogen wordt."
 GYRO = "Gyroscoop X/Y/Z en de grootte |gyro| (zwart). Laat draaibewegingen zien, zoals omdraaien of bukken."
+BEWEGING = (
+    "Per segment van 20 s, uit de accelerometer (UC-1). **Beweging**: spreiding van |acc| boven 0,029 g. **Lopen**: "
+    "beweging met een stapritme van 1,2–2,8 Hz. **Liggend**: recorder meer dan 45° gekanteld (alleen met sticker). "
+    "Zitten en staan zijn allebei *rechtop*: met de recorder op de borst zijn ze niet te onderscheiden. De gekleurde "
+    "vlakken zijn je annotaties, ter vergelijking. Hover over een balk voor de kenmerken."
+)
+BEVESTIGING = (
+    "Hoe de recorder vastzat. Aan een lanyard is de stand niet vast: houding is dan altijd *onbekend*. "
+    "Standaard gekozen uit de elektrodentekst van de opname."
+)
 OVERIG = (
     "Andere signalen uit de bestanden, zoals lead-off (elektrodecontact) en markers. De batterij wordt niet "
     "getoond (wel meegenomen in de export)."

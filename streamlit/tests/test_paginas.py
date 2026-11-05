@@ -154,6 +154,45 @@ def test_koppelen_zonder_live_annotaties_wordt_nieuwe_opname(opname: Opname, tmp
     assert at.selectbox[0].value == "__nieuw__"
 
 
+def test_koppelen_telefoon_csv_eerst_dan_data(opname: Opname, tmp_path: Path) -> None:
+    """Werkwijze met de telefoon-app: eerst de CSV inlezen (nieuwe opname met gegevens), daarna de P-Cardio-data."""
+    deelnemer = Deelnemers(DATA_ROOT).toevoegen("Telefoon", None, "onbekend", False)
+    csv = tmp_path / "annotaties_2026-11-04_1900.csv"
+    csv.write_text(
+        "id,soort,label,t_start,t_eind,tijdbasis,opmerking,beoordeling,beoordeling_opmerking,plaatsing\n"
+        "1,sync,sync-sprong,2026-11-04T19:00:02.000+01:00,,pc,,,,\n"
+        "2,periode,Staan,2026-11-04T19:00:05.000+01:00,2026-11-04T19:00:15.000+01:00,pc,,,,\n",
+        encoding="utf-8",
+    )
+    at = _app("koppelen.py").run()
+    at.text_input[0].input(str(csv)).run()
+    next(b for b in at.button if b.key == "lees_lokaal").click().run()
+    assert not at.exception, at.exception
+    assert at.selectbox[0].value == "__nieuw__"
+    next(s for s in at.selectbox if s.label == "Deelnemer").set_value(deelnemer.id)
+    assert next(s for s in at.selectbox if s.label.startswith("Plaatsing")).value == "Optie 2: met lanyard"
+    next(t for t in at.text_input if t.label.startswith("Experiment")).input("UC-1 sportschool")
+    _knop(at, "Koppel").click().run()
+    assert not at.exception, at.exception
+    nieuw = Opname.laad(DATA_ROOT / "opnames" / f"2026-11-04_1900_{deelnemer.id}")
+    assert (nieuw.info.elektroden, nieuw.info.experiment, nieuw.info.live_afgesloten) == (
+        "Optie 2: met lanyard", "UC-1 sportschool", True,
+    )
+    assert nieuw.info.configuratie.startswith("ECG 2-kanaals")
+    assert [a.label for a in nieuw.annotaties] == ["sync-sprong", "Staan"]
+
+    data = tmp_path / "pcardio_volledig.csv"
+    gecombineerd(opname, _signalen(pd.Timestamp("2026-11-04 18:00:00", tz="UTC"))).to_csv(data, index=False)
+    at.text_input[0].input(str(data)).run()
+    next(b for b in at.button if b.key == "lees_lokaal").click().run()
+    assert not at.exception, at.exception
+    assert at.selectbox[0].value == nieuw.info.id
+    _knop(at, "Koppel").click().run()
+    assert not at.exception, at.exception
+    gekoppeld = Opname.laad(nieuw.map)
+    assert gekoppeld.heeft_signalen and len(gekoppeld.annotaties) == 2
+
+
 def test_bekijken_periode_typen_in_overzicht(opname: Opname) -> None:
     at = _app("bekijken.py")
     at.session_state["bekijk_opname"] = opname.info.id

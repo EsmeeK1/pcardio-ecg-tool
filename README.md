@@ -37,7 +37,10 @@ hem op <https://esmeek1.github.io/pcardio-ecg-tool/mobiel/> (Settings → Pages 
 
 1. Open de link op de iPhone in Safari: Deel-knop → **Zet op beginscherm**.
 2. Na de sessie: **Exporteer CSV** → stuur hem naar jezelf.
-3. Op de pc: pagina **Koppelen** → upload de P-Cardio-bestanden én de CSV tegelijk.
+3. Op de pc: pagina **Data koppelen** → lees de CSV in → **Nieuwe opname**: kies de deelnemer en vul de gegevens
+   in (zelfde standaardwaarden als bij Live opname) → **Koppel**.
+4. Zet de P-Cardio in de docking en lees de P-Cardio-bestanden in. De app stelt de opname van stap 3 voor →
+   **Koppel**, en bepaal daarna de klokcorrectie met de sync-sprong.
 
 De tijden komen van de telefoonklok (`tijdbasis` = `pc`), dus doe een sync-sprong in de app. Test:
 `streamlit/tests/test_mobiel.py` (vereist `node`).

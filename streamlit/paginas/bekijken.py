@@ -8,11 +8,13 @@ import pandas as pd
 import streamlit as st
 
 import hulp
+from kern.beweging import beweging_per_segment
 from kern.lijsten import lees_lijst
-from kern.opslag import BEOORDELINGEN, WEERGAVE_TZ, Annotatie
-from kern.plots import DetailOpties, detail, ecg_kanaalkeuzes, selectie_tijden
+from kern.opslag import BEOORDELINGEN, WEERGAVE_TZ, Annotatie, Opname
+from kern.plots import DetailOpties, beweging_figuur, detail, ecg_kanaalkeuzes, selectie_tijden
 from ui import (
-    annotatie_versie, kies_opname, klok, knoppenraster, laad_signalen, meld, overzicht_figuur, toon_meldingen,
+    _signalen_versie, annotatie_versie, kies_opname, klok, knoppenraster, laad_signalen, meld, overzicht_figuur,
+    toon_meldingen,
 )
 
 ANDERS = "Anders…"
@@ -275,6 +277,37 @@ with st.expander("Overzicht hele opname", expanded=False):
             on_select=lambda: _open_annotatie(tabel_sleutel, ids),
             selection_mode="single-row",
         )
+
+
+@st.cache_data(show_spinner="Beweging bepalen…", max_entries=4)
+def _beweging(map: str, versie: int, bevestiging: str) -> pd.DataFrame:
+    signalen = laad_signalen(Opname.laad(map))
+    gyro = signalen.get("gyro")
+    return beweging_per_segment(signalen["acc"].data, gyro.data if gyro else None, signalen["acc"].fs, bevestiging)
+
+
+if "acc" in signalen:
+    with st.expander("Beweging en houding (UC-1)", expanded=False):
+        st.caption(hulp.BEWEGING)
+        tekst = opname.info.elektroden.lower()
+        bevestiging = st.radio(
+            "Bevestiging", ["sticker", "lanyard"], index=int("lanyard" in tekst), horizontal=True,
+            key=f"bevestiging_{opname.info.id}", help=hulp.BEVESTIGING,
+        )
+        segmenten = _beweging(str(opname.map), _signalen_versie(opname), bevestiging)
+        if segmenten.empty:
+            st.info("De opname is korter dan één segment van 20 s.")
+        else:
+            bekend = segmenten[segmenten["activiteit"] != "onbekend"]
+            kolommen = st.columns(4)
+            for kolom, (naam, deel) in zip(kolommen, {
+                "Rust": (bekend["activiteit"] == "rust").mean(),
+                "Beweging (incl. lopen)": (bekend["activiteit"] != "rust").mean(),
+                "Lopen": (bekend["activiteit"] == "lopen").mean(),
+                "Liggend": (bekend["houding"] == "liggend").mean() if bevestiging == "sticker" else None,
+            }.items()):
+                kolom.metric(naam, "–" if deel is None or pd.isna(deel) else f"{100 * deel:.0f}%")
+            st.plotly_chart(beweging_figuur(segmenten, opname), width="stretch", key=f"uc1_{opname.info.id}")
 
 kop, modus, reset = st.columns([3, 2, 1], vertical_alignment="center")
 kop.markdown(

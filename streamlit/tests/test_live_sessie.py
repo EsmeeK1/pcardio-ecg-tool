@@ -42,6 +42,9 @@ def test_verbinden_streamen_stoppen(sessie: LiveSessie) -> None:
     assert 0.8 < np.nanmax(w[:, 0]) < 1.6  # R-top in mV
     assert sessie.tellers["crc_fout"] == sessie.tellers["onvolledig"] == 0
     assert sessie.lead_off is False and sessie.batterij == 100
+    t_acc, acc = sessie.acc_buffer.lees()
+    assert sessie.acc_buffer.kanalen == ("AccX", "AccY", "AccZ") and len(t_acc) >= 100
+    assert np.nanmean(acc[:, 0]) == pytest.approx(-1.0, abs=0.01)  # gesimuleerd: rechtop
 
     sessie.stop()
     assert sessie.toestand == "verbonden"

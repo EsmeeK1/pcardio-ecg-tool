@@ -19,6 +19,7 @@ from .pcardio import DATATYPES, SENSOREN, SensorConfig
 
 VERBIND_TIMEOUT_S = 30.0
 BUFFER_S = 10.0
+ACC_BUFFER_S = 20.0  # één segment van UC-1 (AI-01)
 PAKKET_INTERVAL_S = 1 / p.PAKKETTEN_PER_SECONDE
 GAT_MARGE_S = 0.05  # afwijking van 0,2 s tussen pakketten die als gat telt
 GEEN_DATA_S = 2.0  # zo lang zonder pakket = waarschuwing in de app
@@ -77,6 +78,8 @@ class LiveSessie:
         self.info: p.Info | None = None
         self.configs: list[SensorConfig] = []
         self.buffer = RingBuffer()
+        self.acc_buffer = RingBuffer(ACC_BUFFER_S)  # voor beweging en houding (UC-1) en de plot
+        self.gyro_buffer = RingBuffer()  # alleen voor de plot
         self.lead_off: bool | None = None
         self.batterij: int | None = None
         self.logt: bool | None = None  # neemt de recorder zelf op; tijdens streamen uit elk pakket bijgewerkt
@@ -162,6 +165,17 @@ class LiveSessie:
     def ecg(self) -> SensorConfig | None:
         return next((c for c in self.configs if c.sensor_id in p.ECG_SENSOREN), None)
 
+    @property
+    def acc(self) -> SensorConfig | None:
+        return self._sensor("acc")
+
+    @property
+    def gyro(self) -> SensorConfig | None:
+        return self._sensor("gyro")
+
+    def _sensor(self, naam: str) -> SensorConfig | None:
+        return next((c for c in self.configs if c.sensor_id in SENSOREN and SENSOREN[c.sensor_id].naam == naam), None)
+
     def start(self) -> None:
         if self.toestand != "verbonden":
             raise RuntimeError(f"Eerst verbinden (toestand: {self.toestand}).")
@@ -173,6 +187,8 @@ class LiveSessie:
             raise RuntimeError(f"Onbekende sensor of datatype in de configuratie: {onbekend}.")
         grootte = p.pakketgrootte(self.configs)
         self.buffer.reset(ecg.rate, SENSOREN[ecg.sensor_id].kanalen)
+        for buffer, config in ((self.acc_buffer, self.acc), (self.gyro_buffer, self.gyro)):
+            buffer.reset(config.rate if config else 1.0, SENSOREN[config.sensor_id].kanalen if config else ())
         self.tellers = dict.fromkeys(self.tellers, 0)
         self._samen = p.Samenvoeger(p.STREAM_ADRES, grootte)
         self._vorige_tijd = None
@@ -324,6 +340,10 @@ class LiveSessie:
         for config, waarden in data.sensoren:
             if config.sensor_id in p.ECG_SENSOREN and config == self.ecg:
                 self.buffer.voeg_toe(data.tijd, waarden)
+            elif config == self.acc:
+                self.acc_buffer.voeg_toe(data.tijd, waarden)
+            elif config == self.gyro:
+                self.gyro_buffer.voeg_toe(data.tijd, waarden)
             elif config.sensor_id == p.LEAD_OFF_SENSOR:
                 self.lead_off = bool(np.nanmax(waarden) > 0.5)
             elif config.sensor_id == p.BATTERIJ_SENSOR:

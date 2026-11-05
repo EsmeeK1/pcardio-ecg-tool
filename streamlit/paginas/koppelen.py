@@ -17,7 +17,7 @@ from kern.opslag import DATA_ROOT, Annotatie, Deelnemers, Opname, lees_annotatie
 from kern.pcardio import Signaal, combineer, lees_bestand
 from kern.plots import sync_figuur
 from kern.verwerking import overlap_fractie, zoek_sync
-from ui import kies_opname, klok, laad_signalen, opname_label
+from ui import kies_opname, klok, laad_signalen, opname_label, opname_velden
 
 st.title("Data koppelen", help=hulp.KOPPELEN)
 
@@ -239,17 +239,18 @@ if ingelezen and (ingelezen["signalen"] or ingelezen["annotaties"]):
             "dan niet nodig. Hoort de data toch bij een bestaande opname (bijv. als de klokken flink "
             "verschillen)? Kies die hieronder.",
         )
+    elif nieuwe_annotaties:
+        st.info(
+            "Alleen annotaties, bijv. van de telefoon-app: maak er een **nieuwe opname** van en vul hieronder de "
+            "gegevens in. Lees daarna de P-Cardio-bestanden in; die worden dan aan deze opname voorgesteld.",
+        )
     for opname, score in kandidaten:
         keuzes.setdefault(opname.info.id, f"{opname_label(opname)}  ({score:.0%} overlap)")
     for opname in opnames.values():
         keuzes.setdefault(opname.info.id, opname_label(opname))
-    if signalen:
-        nieuw = {"__nieuw__": "Nieuwe opname" + ("" if nieuwe_annotaties else " (alleen data, achteraf annoteren)")}
-        # Zonder voorstel is een nieuwe opname de standaard, niet een willekeurige bestaande.
-        keuzes = {**keuzes, **nieuw} if bestand_id in opnames or kandidaten else {**nieuw, **keuzes}
-    if not keuzes:
-        st.warning("Er is nog geen opname om deze annotaties aan te koppelen.")
-        st.stop()
+    nieuw = {"__nieuw__": "Nieuwe opname" + ("" if nieuwe_annotaties else " (alleen data, achteraf annoteren)")}
+    # Zonder voorstel is een nieuwe opname de standaard, niet een willekeurige bestaande.
+    keuzes = {**keuzes, **nieuw} if bestand_id in opnames or kandidaten else {**nieuw, **keuzes}
 
     gekozen = st.selectbox("Opname", list(keuzes), format_func=lambda k: keuzes[k])
     doel = None
@@ -265,6 +266,7 @@ if ingelezen and (ingelezen["signalen"] or ingelezen["annotaties"]):
             "Deelnemer", ids, index=ids.index(uit_bestand) if uit_bestand in ids else 0,
             format_func=lambda i: per_id[i].weergave,
         )
+        velden = opname_velden("de pc of telefoon waarmee geannoteerd is")
     else:
         doel = opnames[gekozen]
         if signalen and doel.heeft_signalen:
@@ -300,8 +302,11 @@ if ingelezen and (ingelezen["signalen"] or ingelezen["annotaties"]):
     ):
         try:
             if gekozen == "__nieuw__":
-                start = min(s.start for s in signalen.values())
-                doel = Opname.nieuw(per_id[deelnemer_id], start, root=DATA_ROOT, live_afgesloten=True)
+                # Begin van de data, of zonder data het begin van de annotaties (bijv. alleen een telefoon-CSV).
+                starts = [s.start for s in signalen.values()] or [a.t_start for a in nieuwe_annotaties["lijst"]]
+                if not starts:
+                    raise ValueError("Het annotatiebestand is leeg.")
+                doel = Opname.nieuw(per_id[deelnemer_id], min(starts), root=DATA_ROOT, live_afgesloten=True, **velden)
             with st.spinner("Opslaan…"):
                 if signalen:
                     doel.bewaar_signalen(signalen, [Path(p) for p in ingelezen["bestanden"]])

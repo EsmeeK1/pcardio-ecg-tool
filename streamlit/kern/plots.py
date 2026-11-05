@@ -395,3 +395,63 @@ def live_ecg(
         uirevision="live",  # zoom en verborgen kanalen blijven staan bij elke verversing
     )
     return fig
+
+
+def live_beweging(
+    t: np.ndarray, waarden: np.ndarray, kanalen: tuple[str, ...], venster_s: float, naam: str, eenheid: str,
+    t_laatste: float, hoogte: int = 220,
+) -> go.Figure:
+    """Live acc of gyro: X/Y/Z en de grootte, op dezelfde tijdas als ``live_ecg`` (``t_laatste`` = laatste ECG-sample)."""
+    x = t - t_laatste
+    binnen = x >= -venster_s
+    fig = go.Figure()
+    for i, kanaal in enumerate(kanalen):
+        fig.add_scatter(x=x[binnen], y=waarden[binnen, i], name=kanaal, mode="lines",
+                        line={"width": 1, "color": GRAFIEK[i % 3]})
+    fig.add_scatter(x=x[binnen], y=np.sqrt((waarden[binnen] ** 2).sum(axis=1)), name=f"|{naam}|", mode="lines",
+                    line={"width": 1.2, "color": TEKST})
+    fig.update_layout(
+        height=hoogte,
+        margin={"l": 50, "r": 10, "t": 10, "b": 40},
+        xaxis={"range": [-venster_s, 0], "title": "tijd (s)"},
+        yaxis={"title": f"{naam} ({eenheid})"},
+        legend={"orientation": "h", "y": 1.15},
+        uirevision=f"live_{naam}",
+    )
+    return fig
+
+
+# UC-1: rust licht, beweging oranje, lopen donkeroranje; rechtop licht, liggend donker.
+_BEWEGING_KLEUREN = {
+    ("Activiteit", "rust"): "#9FDCEB", ("Activiteit", "beweging"): ORANJE, ("Activiteit", "lopen"): "#8A4B00",
+    ("Houding", "rechtop"): "#6EC6DA", ("Houding", "liggend"): DONKER,
+    ("Activiteit", "onbekend"): "#D9D9D9", ("Houding", "onbekend"): "#D9D9D9",
+}
+
+
+def beweging_figuur(segmenten: pd.DataFrame, opname: Opname) -> go.Figure:
+    """UC-1 per segment van 20 s als tijdbalk (activiteit en houding), met de annotaties als achtergrond."""
+    fig = make_subplots(rows=1, cols=1)
+    duur_ms = (segmenten["eind"] - segmenten["start"]).dt.total_seconds() * 1000
+    kenmerken = segmenten[["acc_sd", "stap_hz", "stap_aandeel", "kanteling"]].to_numpy()
+    for (rij, waarde), kleur in _BEWEGING_KLEUREN.items():
+        kolom = "houding" if rij == "Houding" else "activiteit"
+        m = (segmenten[kolom] == waarde).to_numpy()
+        if not m.any():
+            continue
+        fig.add_trace(go.Bar(
+            y=[rij] * int(m.sum()), x=duur_ms[m], base=_lokaal(segmenten["start"][m]), orientation="h",
+            marker={"color": kleur, "line": {"width": 0}}, name=waarde, legendgroup=rij, legendgrouptitle_text=rij,
+            customdata=kenmerken[m],
+            hovertemplate=(f"<b>{waarde}</b> %{{base|%H:%M:%S}}<br>sd |acc| %{{customdata[0]:.3f}} g · "
+                           "stap %{customdata[1]:.2f} Hz (%{customdata[2]:.2f}) · kanteling %{customdata[3]:.0f}°"
+                           "<extra></extra>"),
+        ))
+    _teken_annotaties(fig, opname, 1)
+    fig.update_xaxes(type="date", tickformat="%H:%M:%S")
+    fig.update_yaxes(categoryorder="array", categoryarray=["Houding", "Activiteit"])
+    fig.update_layout(
+        barmode="overlay", bargap=0.25, height=260, margin={"l": 10, "r": 10, "t": 40, "b": 10},
+        legend={"orientation": "h", "y": -0.25},
+    )
+    return fig
