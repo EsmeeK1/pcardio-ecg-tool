@@ -7,6 +7,7 @@ Nooit lezen of schrijven tijdens het streamen. De configuratie wordt alleen gesc
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from collections.abc import Callable
@@ -18,7 +19,7 @@ from .dongle import Dongle
 from .pcardio import DATATYPES, SENSOREN, SensorConfig
 
 VERBIND_TIMEOUT_S = 30.0
-BUFFER_S = 10.0
+BUFFER_S = 20.0  # ECG en gyro: het grootste live venster
 ACC_BUFFER_S = 20.0  # één segment van UC-1 (AI-01)
 PAKKET_INTERVAL_S = 1 / p.PAKKETTEN_PER_SECONDE
 GAT_MARGE_S = 0.05  # afwijking van 0,2 s tussen pakketten die als gat telt
@@ -83,6 +84,7 @@ class LiveSessie:
         self.lead_off: bool | None = None
         self.batterij: int | None = None
         self.logt: bool | None = None  # neemt de recorder zelf op; tijdens streamen uit elk pakket bijgewerkt
+        self.info_gelezen: float | None = None  # time.time() van de laatste uitlezing van info (niet tijdens streamen)
         self.tellers = {"pakketten": 0, "crc_fout": 0, "onvolledig": 0, "tijdgaten": 0}
         self._samen: p.Samenvoeger | None = None
         self._vorige_tijd: float | None = None
@@ -157,9 +159,28 @@ class LiveSessie:
             self.melding = ("warning", "De recorder meet nu geen ECG. Schrijf eerst een configuratie met ECG.")
 
     def _lees_apparaat(self) -> None:
+        self._lees_info()
+        self.configs = p.decodeer_config(self.dongle.lees(p.CONFIG_ADRES, p.CONFIG_LENGTE))
+
+    def _lees_info(self) -> None:
         self.info = p.Info.van_bytes(self.dongle.lees(p.INFO_ADRES, p.INFO_LENGTE))
         self.logt = self.info.logt
-        self.configs = p.decodeer_config(self.dongle.lees(p.CONFIG_ADRES, p.CONFIG_LENGTE))
+        self.info_gelezen = time.time()
+
+    def ververs_info(self) -> bool:
+        """Status (opnemen, batterij, lead-off) opnieuw uitlezen, stil op de achtergrond. Alleen als de recorder
+        verbonden is en niet streamt: tijdens het streamen komt de status uit elk datapakket. False als het nu niet
+        kan. Een mislukte uitlezing wordt genegeerd; de volgende poging komt vanzelf."""
+        if self.bezig or self.toestand != "verbonden":
+            return False
+
+        def lees() -> None:
+            with contextlib.suppress(Exception):
+                self._lees_info()
+
+        self._werk = threading.Thread(target=lees, name="live-ververs_info", daemon=True)
+        self._werk.start()
+        return True
 
     @property
     def ecg(self) -> SensorConfig | None:

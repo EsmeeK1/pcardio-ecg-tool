@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 import hulp
-from kern.opslag import DATA_ROOT, GESLACHTEN, Deelnemer, Deelnemers
+from kern.opslag import DATA_ROOT, EERSTE_JAAR, GESLACHTEN, Deelnemer, Deelnemers, nu
 from ui import meld, toon_meldingen
 
 register = Deelnemers(DATA_ROOT)
@@ -22,14 +22,14 @@ def formulier(sleutel: str, bestaand: Deelnemer | None = None) -> dict[str, obje
     with st.form(sleutel, clear_on_submit=bestaand is None):
         naam = st.text_input("Voornaam of patiënt-ID", value=bestaand.naam if bestaand else "", help=hulp.NAAM)
         links, rechts = st.columns(2)
-        leeftijd = links.number_input(
-            "Leeftijd (jaren)",
-            min_value=0,
-            max_value=120,
+        geboortejaar = links.number_input(
+            "Geboortejaar",
+            min_value=EERSTE_JAAR,
+            max_value=nu().year,
             step=1,
-            value=bestaand.leeftijd if bestaand and bestaand.leeftijd is not None else None,
+            value=bestaand.geboortejaar if bestaand and bestaand.geboortejaar is not None else None,
             placeholder="onbekend",
-            help=hulp.LEEFTIJD,
+            help=hulp.GEBOORTEJAAR,
         )
         geslacht = rechts.selectbox(
             "Geslacht",
@@ -53,7 +53,7 @@ def formulier(sleutel: str, bestaand: Deelnemer | None = None) -> dict[str, obje
             return None
     return {
         "naam": naam.strip(),
-        "leeftijd": int(leeftijd) if leeftijd is not None else None,
+        "geboortejaar": int(geboortejaar) if geboortejaar is not None else None,
         "geslacht": geslacht,
         "hartdecompensatie": hartdecompensatie == "ja",
         "andere_aandoening": andere.strip(),
@@ -115,7 +115,8 @@ if alle:
                 {
                     "id": d.id,
                     "naam / patiënt-ID": d.naam,
-                    "leeftijd": d.leeftijd,
+                    "geboortejaar": d.geboortejaar,
+                    "leeftijd": d.leeftijd_op(nu()),
                     "geslacht": d.geslacht,
                     "hartdecompensatie": "ja" if d.hartdecompensatie else "nee",
                     "andere aandoening": d.andere_aandoening,

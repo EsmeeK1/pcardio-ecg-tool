@@ -28,7 +28,7 @@ def _knop(at: AppTest, begin: str):
 @pytest.fixture(scope="module")
 def opname() -> Opname:
     t0 = pd.Timestamp("2026-10-05 08:00:00", tz="UTC")
-    deelnemer = Deelnemers(DATA_ROOT).toevoegen("Test", 40, "man", False)
+    deelnemer = Deelnemers(DATA_ROOT).toevoegen("Test", 1986, "man", False)
     opname = Opname.nieuw(deelnemer, t0, root=DATA_ROOT)
     opname.voeg_toe("sync", "sync-sprong", t0 + pd.Timedelta(seconds=8.8))
     opname.voeg_toe("periode", "Springen", t0 + pd.Timedelta(seconds=12), t0 + pd.Timedelta(seconds=14))

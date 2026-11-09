@@ -14,9 +14,9 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 import hulp
 from kern.live_sessie import LiveSessie
-from kern.opslag import DATA_ROOT, WEERGAVE_TZ, Deelnemers, Opname
+from kern.opslag import DATA_ROOT, WEERGAVE_TZ, Deelnemers, Opname, versie
 from kern.pcardio import Signaal
-from kern.beweging import LIVE_STAP_S, SEGMENT_S, beweging_nu
+from kern.beweging import HOUDING_LIVE_S, LIVE_STAP_S, SEGMENT_S, beweging_nu, houding_nu
 from kern.plots import live_beweging, live_ecg, markeer_venster, overzicht
 
 
@@ -61,9 +61,8 @@ def _namen(versie: int) -> dict[str, str]:
 
 
 def deelnemer_naam(deelnemer_id: str) -> str:
-    """Gecachet op de wijzigingstijd van deelnemers.csv: wordt per rerun vaak aangeroepen (keuzelijst met opnames)."""
-    pad = Deelnemers(DATA_ROOT).pad
-    return _namen(pad.stat().st_mtime_ns if pad.exists() else 0).get(deelnemer_id, deelnemer_id)
+    """Gecachet op de versie van de database: wordt per rerun vaak aangeroepen (keuzelijst met opnames)."""
+    return _namen(versie(DATA_ROOT)).get(deelnemer_id, deelnemer_id)
 
 
 def opname_label(opname: Opname) -> str:
@@ -126,8 +125,8 @@ def overzicht_figuur(opname: Opname, venster: tuple[pd.Timestamp, pd.Timestamp])
 
 
 def annotatie_versie(opname: Opname) -> int:
-    pad = opname.map / "annotaties.csv"
-    return pad.stat().st_mtime_ns if pad.exists() else 0
+    # ponytail: versie van de hele database, dus ook andere opnames maken de cache ongeldig; prima bij deze omvang
+    return versie(opname.root)
 
 
 def klok(tijd: pd.Timestamp, tienden: bool = False) -> str:
@@ -253,16 +252,15 @@ def live_beweging_weergave(sessie: LiveSessie, venster_s: float, hoogte: int = 2
             st.session_state.live_beweging = (tijd[-1] if len(tijd) else 0.0, bevestiging,
                                               beweging_nu(tijd, acc, sessie.acc_buffer.fs, bevestiging))
         nu = st.session_state.live_beweging[2]
-        if nu["activiteit"] == "onbekend":
-            st.caption(f"Beweging en houding: nog {SEGMENT_S - len(tijd) / sessie.acc_buffer.fs:.0f} s data "
-                       "verzamelen…")
-        else:
-            houding = nu["houding"] if bevestiging == "sticker" else "onbekend (lanyard)"
-            st.markdown(
-                f"**Activiteit:** {nu['activiteit']} · **Houding:** {houding} · laatste {SEGMENT_S} s, "
-                f"elke {LIVE_STAP_S} s bijgewerkt",
-                help=f"sd |acc| {nu['acc_sd']:.3f} g · kanteling {nu['kanteling']:.0f}°. {hulp.BEWEGING}",
-            )
+        vorige_houding = st.session_state.get("live_houding")
+        houding, graden = houding_nu(tijd, acc, sessie.acc_buffer.fs, bevestiging, vorige_houding)
+        st.session_state.live_houding = houding
+        houding_tekst = (f"{houding} ({graden:.0f}°, laatste {HOUDING_LIVE_S} s)" if bevestiging == "sticker"
+                         and pd.notna(graden) else "onbekend (lanyard)" if bevestiging != "sticker" else "nog even…")
+        activiteit_tekst = (f"nog {SEGMENT_S - len(tijd) / sessie.acc_buffer.fs:.0f} s data verzamelen…"
+                            if nu["activiteit"] == "onbekend"
+                            else f"{nu['activiteit']} (laatste {SEGMENT_S} s, elke {LIVE_STAP_S} s)")
+        st.markdown(f"**Houding:** {houding_tekst} · **Activiteit:** {activiteit_tekst}", help=hulp.BEWEGING)
     t_laatste = sessie.buffer.lees()[0][-1]
     for naam, eenheid, buffer in (("acc", "g", sessie.acc_buffer), ("gyro", "°/s", sessie.gyro_buffer)):
         if not st.session_state.get(f"live_{naam}"):

@@ -433,7 +433,7 @@ def beweging_figuur(segmenten: pd.DataFrame, opname: Opname) -> go.Figure:
     """UC-1 per segment van 20 s als tijdbalk (activiteit en houding), met de annotaties als achtergrond."""
     fig = make_subplots(rows=1, cols=1)
     duur_ms = (segmenten["eind"] - segmenten["start"]).dt.total_seconds() * 1000
-    kenmerken = segmenten[["acc_sd", "stap_hz", "stap_aandeel", "kanteling"]].to_numpy()
+    kenmerken = segmenten[["acc_sd", "kanteling"]].to_numpy()
     for (rij, waarde), kleur in _BEWEGING_KLEUREN.items():
         kolom = "houding" if rij == "Houding" else "activiteit"
         m = (segmenten[kolom] == waarde).to_numpy()
@@ -444,8 +444,7 @@ def beweging_figuur(segmenten: pd.DataFrame, opname: Opname) -> go.Figure:
             marker={"color": kleur, "line": {"width": 0}}, name=waarde, legendgroup=rij, legendgrouptitle_text=rij,
             customdata=kenmerken[m],
             hovertemplate=(f"<b>{waarde}</b> %{{base|%H:%M:%S}}<br>sd |acc| %{{customdata[0]:.3f}} g · "
-                           "stap %{customdata[1]:.2f} Hz (%{customdata[2]:.2f}) · kanteling %{customdata[3]:.0f}°"
-                           "<extra></extra>"),
+                           "kanteling %{customdata[1]:.0f}°<extra></extra>"),
         ))
     _teken_annotaties(fig, opname, 1)
     fig.update_xaxes(type="date", tickformat="%H:%M:%S")

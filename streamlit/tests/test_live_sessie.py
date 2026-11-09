@@ -58,6 +58,17 @@ def test_verbinden_streamen_stoppen(sessie: LiveSessie) -> None:
     assert verzonden[-2:] == ["$T03", "$D"]
 
 
+def test_opnamestatus_zonder_stream_opnieuw_uitlezen(sessie: LiveSessie) -> None:
+    """Verbonden maar niet streamend: de knop op de recorder is pas zichtbaar na opnieuw uitlezen."""
+    sessie.verbind()
+    assert sessie.logt is False
+    sessie.dongle.logt = True
+    assert sessie.ververs_info()
+    _wacht(lambda: sessie.logt is True)
+    sessie.start()
+    assert not sessie.ververs_info()  # nooit lezen tijdens het streamen
+
+
 def test_opnamestatus_volgt_de_stream(sessie: LiveSessie) -> None:
     """Starten/stoppen met de knop op de recorder is zichtbaar zonder opnieuw te verbinden (bit 0 in elk pakket)."""
     sessie.verbind()

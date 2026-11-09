@@ -40,7 +40,7 @@ FASES: list[tuple[str, str, list[Stap]]] = [
             Stap(
                 "deelnemer",
                 "Leg de deelnemer vast",
-                "Voornaam of patiënt-ID, leeftijd, geslacht. Onthoud het ID (`D001`, …): dat komt zo in de P-Cardio.",
+                "Voornaam of patiënt-ID, geboortejaar, geslacht. Onthoud het ID (`D001`, …): dat komt zo in de P-Cardio.",
                 "paginas/deelnemers.py",
                 "Naar Deelnemers",
             ),

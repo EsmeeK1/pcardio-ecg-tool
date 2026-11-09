@@ -113,7 +113,7 @@ with paginas:
     with st.expander("Deelnemers", expanded=True):
         st.markdown(
             """
-- **Nieuwe deelnemer**: voornaam of patiënt-ID, leeftijd, geslacht, hartdecompensatie, andere aandoening.
+- **Nieuwe deelnemer**: voornaam of patiënt-ID, geboortejaar, geslacht, hartdecompensatie, andere aandoening.
 - De deelnemer krijgt een **ID** (`D001`, …). Zet dat ID in het **User Id**-veld van de P-Cardio, niet de naam:
   dat veld wordt op het apparaat niet versleuteld.
 - **Bewerken**: gegevens aanpassen; het ID blijft hetzelfde.
@@ -228,10 +228,8 @@ Alle gegevens staan in **`streamlit/data/`**. Die map staat in `.gitignore` (er 
 
 ```
 streamlit/data/
-├── deelnemers.csv
+├── ecg.db                 database: deelnemers, opnames (+ klokcorrectie) en annotaties
 └── opnames/<datum>_<tijd>_<deelnemer-id>/
-    ├── opname.json        gegevens van de opname + klokcorrectie
-    ├── annotaties.csv     perioden, momenten, sync-sprongen
     ├── ruw/               onveranderde kopie van de P-Cardio-bestanden
     ├── signalen/          ingelezen signalen (snel te laden)
     └── export/            gemaakte exports

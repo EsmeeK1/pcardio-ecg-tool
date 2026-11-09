@@ -20,8 +20,9 @@ from .pcardio import SENSOREN, SensorConfig
 
 BAUDRATE = 460800
 DONGLE_NAAM = "2M BLE Dongle"
-# pyserial geeft op Windows de 'bus reported device description' niet door; daarom ook op VID:PID (Nordic).
-DONGLE_VID_PID = (0x1915, 0x521A)
+# pyserial geeft op Windows de 'bus reported device description' niet door; daarom ook op VID:PID. Twee varianten
+# gezien: Nordic (oktober 2026) en 16D0:06A1 (november 2026, antwoordt met hetzelfde protocol).
+DONGLE_VID_PIDS = {(0x1915, 0x521A), (0x16D0, 0x06A1)}
 VERZOEK_TIMEOUT_S = 2.0
 SCHRIJF_TIMEOUT_S = 1.0
 LOG_REGELS = 300
@@ -33,7 +34,7 @@ def poorten() -> list[tuple[str, str]]:
 
     gevonden = []
     for info in list_ports.comports():
-        is_dongle = DONGLE_NAAM in f"{info.description} {info.product}" or (info.vid, info.pid) == DONGLE_VID_PID
+        is_dongle = DONGLE_NAAM in f"{info.description} {info.product}" or (info.vid, info.pid) in DONGLE_VID_PIDS
         gevonden.append((not is_dongle, info.device, f"{info.device}: {info.description}" + (" (dongle)" if is_dongle else "")))
     return [(poort, tekst) for _, poort, tekst in sorted(gevonden)]
 

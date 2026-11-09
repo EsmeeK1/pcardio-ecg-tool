@@ -1,9 +1,10 @@
-"""UC-1-regels op synthetische acc: rechtop in rust, liggend in rust, lopen."""
+"""UC-1-regels op synthetische acc: rechtop en liggend in rust, lopen, en de live houding."""
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from kern.beweging import beweging_nu, beweging_per_segment
+from kern.beweging import beweging_nu, beweging_per_segment, houding, houding_nu
 
 FS = 100
 
@@ -35,3 +36,22 @@ def test_live_laatste_20_s() -> None:
     assert (nu["activiteit"], nu["houding"]) == ("rust", "liggend")
     kort = beweging_nu(tijd[:500], a[:500], FS, "sticker")  # net gestart: 5 s
     assert (kort["activiteit"], kort["houding"]) == ("onbekend", "onbekend")
+
+
+def test_houding_marge_rond_45_graden() -> None:
+    assert houding(47, "sticker") == "liggend"  # per segment: gewoon 45°
+    assert houding(47, "sticker", vorige="rechtop") == "rechtop"  # live: pas boven 50° liggend (bukken)
+    assert houding(52, "sticker", vorige="rechtop") == "liggend"
+    assert houding(43, "sticker", vorige="liggend") == "liggend"  # en pas onder 40° terug
+    assert houding(38, "sticker", vorige="liggend") == "rechtop"
+    assert houding(150, "sticker") == houding(10, "lanyard") == houding(float("nan"), "sticker") == "onbekend"
+
+
+def test_houding_live_over_laatste_5_s() -> None:
+    a = np.vstack([_acc((-1, 0, 0), n_s=15), _acc((0, 0, 1), n_s=6)])  # 15 s rechtop, dan 6 s liggend
+    tijd = np.arange(len(a)) / FS
+    stand, graden = houding_nu(tijd, a, FS, "sticker", vorige="rechtop")
+    assert stand == "liggend" and graden > 80  # na 6 s al liggend; over 20 s gemiddeld zou het nog rechtop zijn
+    assert beweging_nu(tijd[-2000:], a[-2000:], FS, "sticker")["houding"] == "rechtop"
+    assert houding_nu(tijd[:500], a[:500], FS, "sticker") == ("rechtop", pytest.approx(0, abs=1))  # 5 s is genoeg
+    assert houding_nu(tijd[:200], a[:200], FS, "sticker")[0] == "onbekend"  # pas 2 s data

@@ -24,7 +24,7 @@ def zes_leads(ecg: pd.DataFrame) -> pd.DataFrame:
     ii = ecg[LEAD_II].to_numpy(dtype=float)
     return pd.DataFrame(
         {
-            "tijd": ecg["tijd"].to_numpy(),
+            "tijd": ecg["tijd"].array,  # .to_numpy() maakt van tijden met tijdzone trage Python-objecten
             "I": i,
             "II": ii,
             "III": ii - i,
@@ -118,8 +118,9 @@ class SyncResultaat:
 
     @property
     def duidelijk(self) -> bool:
-        """Piek steekt duidelijk boven de rest van het zoekvenster uit."""
-        return self.piek_g > 5 * max(self.ruis_g, 1e-6)
+        """Piek steekt duidelijk boven de rest van het zoekvenster uit, én is groot genoeg voor een landing: in
+        alleen ruis ligt het hoogste punt anders ook al snel 5× boven de mediaan."""
+        return self.piek_g > max(5 * self.ruis_g, MIN_SPRONG_G)
 
 
 def zoek_sync(acc: pd.DataFrame, t_gelogd: pd.Timestamp, zoek_s: float = 5.0) -> SyncResultaat | None:
@@ -139,6 +140,58 @@ def zoek_sync(acc: pd.DataFrame, t_gelogd: pd.Timestamp, zoek_s: float = 5.0) ->
         piek_g=float(afwijking[i]),
         ruis_g=float(np.nanmedian(afwijking)),
     )
+
+
+MIN_SPRONG_G = 0.5  # afwijking van |acc| bij de landing; echte sprongen geven meerdere g
+UUR_MARGE_S = 300  # klokdrift + reactietijd: de recorder liep in metingen ± 76 s uit
+GROTE_CORRECTIE_S = 300
+
+
+def uur_verschoven(correctie_s: float) -> int:
+    """+1 of -1 als de klokcorrectie op ± een heel uur na uitkomt (de P-Cardio-klok staat dan nog op zomer- of
+    wintertijd en de data is een uur verschoven), anders 0."""
+    uren = round(correctie_s / 3600)
+    return uren if abs(uren) == 1 and abs(correctie_s - 3600 * uren) <= UUR_MARGE_S else 0
+
+
+def zoek_sync_of_uur_verschoven(acc: pd.DataFrame, t_gelogd: pd.Timestamp, zoek_s: float) -> SyncResultaat | None:
+    """Zoals ``zoek_sync``; vindt die geen duidelijke piek, dan ook een uur eerder en later (P-Cardio-klok nog op
+    zomer- of wintertijd). De correctie blijft t.o.v. het echte gelogde moment, dus komt dan op ± een uur uit."""
+    gewoon = zoek_sync(acc, t_gelogd, zoek_s)
+    if gewoon is not None and gewoon.duidelijk:
+        return gewoon
+    for uren in (1, -1):
+        r = zoek_sync(acc, t_gelogd + pd.Timedelta(hours=uren), zoek_s)
+        if r is not None and r.duidelijk:
+            return SyncResultaat(t_gelogd, r.t_piek, r.piek_g, r.ruis_g)
+    return gewoon
+
+
+VERFIJN_S = 5.0  # gelijkgezette klokken: de sprong ligt binnen enkele seconden van het gelogde moment
+
+
+def zoek_syncs(acc: pd.DataFrame, tijden: list[pd.Timestamp], zoek_s: float) -> list[SyncResultaat | None]:
+    """Alle sync-sprongen van een opname, robuust tegen andere bewegingen in een ruim zoekvenster:
+
+    1. per sync eerst ±VERFIJN_S, pas zonder duidelijke piek ±``zoek_s`` en daarna een uur verschoven;
+    2. de mediaan van de duidelijke correcties is de klokafwijking van de opname;
+    3. per sync opnieuw ±VERFIJN_S rond die afwijking, zodat één verkeerde piek het voorstel niet scheeftrekt.
+    """
+    grof = []
+    for t in tijden:
+        r = zoek_sync(acc, t, VERFIJN_S)
+        grof.append(r if r is not None and r.duidelijk else zoek_sync_of_uur_verschoven(acc, t, zoek_s))
+    duidelijk = [r.correctie_s for r in grof if r is not None and r.duidelijk]
+    if not duidelijk:
+        return grof
+    afwijking = pd.Timedelta(seconds=float(np.median(duidelijk)))
+    resultaat = []
+    for t, r in zip(tijden, grof):
+        fijn = zoek_sync(acc, t + afwijking, VERFIJN_S)
+        if fijn is not None and fijn.duidelijk:
+            r = SyncResultaat(t, fijn.t_piek, fijn.piek_g, fijn.ruis_g)
+        resultaat.append(r)
+    return resultaat
 
 
 def overlap_fractie(a0: pd.Timestamp, a1: pd.Timestamp, b0: pd.Timestamp, b1: pd.Timestamp) -> float:

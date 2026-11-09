@@ -178,11 +178,23 @@ _TICKS_PER_SECONDE = 32768
 _CRC_STEEKPROEF = 50  # aantal pakketten waarvan de checksum gecontroleerd wordt
 # De PCardio-software van 2M zet de klok van het apparaat op lokale kloktijd, niet op UTC (zoals de
 # handleiding suggereert): bestandsnaam en tijdstempels komen overeen met de Nederlandse kloktijd van dát moment.
-# Het apparaat schakelt zelf niet om naar winter-/zomertijd, dus de klok houdt een vaste offset.
-# ponytail: vaste UTC+2 (zomertijd) omdat de klok in de zomer van 2026 is gezet; in de winter liep de data anders
-# een uur vóór (gemeten op 3 en 4 november). Is de klok opnieuw gezet met de PCardio-software? Zet dit dan op de
-# offset van dat moment: "Etc/GMT-1" in de winter, "Etc/GMT-2" in de zomer (Etc-tekens zijn omgedraaid).
-APPARAAT_TZ = "Etc/GMT-2"
+# Het apparaat schakelt zelf niet om naar winter-/zomertijd, dus de klok houdt een vaste offset. We nemen de
+# Nederlandse offset bij het begin van het bestand en houden die vast. Is de klok in de andere periode gezet (in de
+# zomer gezet, in de winter gemeten: zo liep de data begin november 2026 een uur vóór), dan komt de klokcorrectie op
+# ± een uur uit: Data koppelen stelt dan voor de data een uur te verschuiven (verwerking.uur_verschoven).
+APPARAAT_TZ = "Europe/Amsterdam"
+
+
+
+def apparaattijd_naar_utc(tijden_s: np.ndarray) -> pd.Series:
+    """Kloktijd van de recorder (seconden, als 'naïeve' lokale tijd) naar UTC, met één vaste offset: de Nederlandse
+    offset op het eerste tijdstip. Zo blijft een opname die over de zomer-/wintertijdwissel loopt doorlopend."""
+    ruw = pd.to_datetime(tijden_s, unit="s")
+    if not len(ruw):
+        return pd.Series(ruw, dtype="datetime64[ns, UTC]")
+    offset = pd.Timestamp(ruw[0]).tz_localize(APPARAAT_TZ, ambiguous=True, nonexistent="shift_forward").utcoffset()
+    return pd.Series(ruw - offset).dt.tz_localize("UTC")
+
 
 GAINS = [1, 2, 3, 4, 6, 8, 12, 16]
 SAMPLE_RATES = [1000, 800, 500, 400, 250, 200, 100, 50, 25, 10, 5]
@@ -397,10 +409,7 @@ def _decodeer_sensor(
 
     kanalen = config.sensor.kanalen
     data = pd.DataFrame(analoog, columns=list(kanalen))
-    lokaal = pd.Series(pd.to_datetime(tijden, unit="s")).dt.tz_localize(
-        APPARAAT_TZ, ambiguous="NaT", nonexistent="shift_forward",
-    )
-    data.insert(0, "tijd", lokaal.dt.tz_convert("UTC"))
+    data.insert(0, "tijd", apparaattijd_naar_utc(tijden))
     return Signaal(config.sensor.naam, data, {k: dt.eenheid for k in kanalen}, bron)
 
 

@@ -3,23 +3,26 @@
 Structuur::
 
     data/
-    ├── deelnemers.csv
+    ├── ecg.db                   SQLite: deelnemers, opnames (metadata + klokcorrectie) en annotaties
     └── opnames/<YYYY-MM-DD_HHMM>_<deelnemer-id>/
-        ├── opname.json          metadata + klokcorrectie
-        ├── annotaties.csv       perioden, momenten en sync-momenten
         ├── ruw/                 kopie van de ingeladen P-Cardio-bestanden
         ├── signalen/            ingelezen signalen (parquet, snel te laden)
         └── export/              gecombineerde exports
 
-Elke wijziging wordt direct weggeschreven (via een tijdelijk bestand, zodat een crash geen half bestand
-achterlaat).
+Elke wijziging is één transactie: een crash laat geen half bijgewerkte opname achter. Bestaat ``ecg.db`` nog niet,
+dan worden ``deelnemers.csv`` en per opname ``opname.json`` en ``annotaties.csv`` (het oude formaat) eenmalig
+overgenomen. Die bestanden blijven staan, maar worden daarna niet meer gelezen of bijgewerkt.
 """
 
 from __future__ import annotations
 
+import contextvars
+import functools
 import json
 import os
 import shutil
+import sqlite3
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +36,7 @@ DATA_ROOT = Path(os.environ.get("ECG_TOOL_DATA") or Path(__file__).resolve().par
 WEERGAVE_TZ = "Europe/Amsterdam"
 
 GESLACHTEN = ["man", "vrouw", "anders", "onbekend"]
+EERSTE_JAAR = 1900
 SOORTEN = ("periode", "moment", "sync")
 TIJDBASES = ("pc", "data")
 BEOORDELINGEN = ["", "schoon", "ruis, QRS herkenbaar", "onbruikbaar"]
@@ -55,6 +59,218 @@ def als_timestamp(tijd: datetime | pd.Timestamp | str) -> pd.Timestamp:
     return ts.tz_convert("UTC")
 
 
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS deelnemers (
+    nummer INTEGER PRIMARY KEY AUTOINCREMENT,  -- nooit hergebruikt, ook niet na verwijderen
+    id TEXT NOT NULL UNIQUE,
+    naam TEXT NOT NULL,
+    geboortejaar INTEGER,
+    geslacht TEXT NOT NULL,
+    hartdecompensatie INTEGER NOT NULL,
+    andere_aandoening TEXT NOT NULL DEFAULT '',
+    aangemaakt TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS opnames (
+    id TEXT PRIMARY KEY,
+    deelnemer_id TEXT NOT NULL REFERENCES deelnemers(id) ON DELETE RESTRICT,
+    info TEXT NOT NULL  -- OpnameInfo als JSON: velden toevoegen vraagt geen migratie
+);
+CREATE TABLE IF NOT EXISTS annotaties (
+    opname_id TEXT NOT NULL REFERENCES opnames(id) ON DELETE CASCADE,
+    id INTEGER NOT NULL,
+    soort TEXT NOT NULL,
+    label TEXT NOT NULL,
+    t_start TEXT NOT NULL,
+    t_eind TEXT,
+    tijdbasis TEXT NOT NULL,
+    opmerking TEXT NOT NULL DEFAULT '',
+    beoordeling TEXT NOT NULL DEFAULT '',
+    beoordeling_opmerking TEXT NOT NULL DEFAULT '',
+    plaatsing TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (opname_id, id)
+);
+"""
+
+
+# ECG_TOOL_DB: werkkopie van de database elders (bijv. lokaal, terwijl de opnamemappen op OneDrive staan; zie
+# kern.synchronisatie). Geldt alleen voor DATA_ROOT, niet voor andere mappen (tests).
+_DB_ELDERS = os.environ.get("ECG_TOOL_DB")
+
+
+def db_pad(root: str | Path = DATA_ROOT) -> Path:
+    if _DB_ELDERS and Path(root).resolve() == DATA_ROOT.resolve():
+        return Path(_DB_ELDERS)
+    return Path(root) / "ecg.db"
+
+
+@contextmanager
+def _db(root: str | Path):
+    """Verbinding met ``ecg.db`` als één transactie (commit aan het eind, rollback bij een fout)."""
+    pad = db_pad(root)
+    if not pad.exists():
+        _maak_db(Path(root))
+    with closing(sqlite3.connect(pad, timeout=10)) as con:
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON")
+        if con.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSIE:
+            _werk_schema_bij(con)
+        with con:
+            yield con
+
+
+SCHEMA_VERSIE = 1  # 1: deelnemers.geboortejaar in plaats van leeftijd (9-11-2026)
+
+
+def _werk_schema_bij(con: sqlite3.Connection) -> None:
+    """Oudere database bijwerken. Versie 0 -> 1: leeftijd wordt geboortejaar (jaar van aanmaken − leeftijd)."""
+    with con:
+        kolommen = {r[1] for r in con.execute("PRAGMA table_info(deelnemers)")}
+        if "leeftijd" in kolommen:
+            con.execute("ALTER TABLE deelnemers RENAME COLUMN leeftijd TO geboortejaar")
+            for nummer, leeftijd, aangemaakt in con.execute(
+                    "SELECT nummer, geboortejaar, aangemaakt FROM deelnemers WHERE geboortejaar IS NOT NULL").fetchall():
+                con.execute("UPDATE deelnemers SET geboortejaar = ? WHERE nummer = ?",
+                            (_jaar(aangemaakt) - leeftijd, nummer))
+        con.execute(f"PRAGMA user_version = {SCHEMA_VERSIE}")
+
+
+def _jaar(aangemaakt: str) -> int:
+    return pd.Timestamp(aangemaakt).year if aangemaakt else nu().year
+
+
+def _maak_db(root: Path) -> None:
+    """Nieuwe database, met het oude formaat erin, eerst als tijdelijk bestand. Pas als alles gelukt is wordt het
+    ``ecg.db``: een mislukte migratie laat zo geen lege database achter die de volgende keer niet meer migreert."""
+    root.mkdir(parents=True, exist_ok=True)
+    db_pad(root).parent.mkdir(parents=True, exist_ok=True)
+    tmp = db_pad(root).with_name(f"ecg.db.{os.getpid()}.tmp")  # naast de database: os.replace werkt niet tussen schijven
+    tmp.unlink(missing_ok=True)
+    try:
+        with closing(sqlite3.connect(tmp)) as con:
+            con.execute("PRAGMA foreign_keys = ON")
+            con.executescript(_SCHEMA)
+            con.execute(f"PRAGMA user_version = {SCHEMA_VERSIE}")
+            with con:
+                _migreer_bestanden(con, root)
+        if not db_pad(root).exists():  # een ander proces (Streamlit naast de desktop-app) kan net eerder zijn
+            os.replace(tmp, db_pad(root))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+# --- ongedaan maken / opnieuw doen ----------------------------------------------------------------------------
+
+
+@dataclass
+class _Stap:
+    label: str
+    root: Path
+    db: bytes  # de database van vóór (in 'terug') of van na (in 'vooruit') de stap
+    verplaatst: list[tuple[Path, Path]] = field(default_factory=list)  # mappen (van, naar), bijv. naar de prullenbak
+
+
+class Geschiedenis:
+    """Ongedaan maken (Ctrl+Z) en opnieuw doen (Ctrl+Shift+Z) voor alles wat in ``ecg.db`` staat. Per actie (een
+    publieke methode met ``@_stap``) een kopie van de database van vóór de actie (± 100 KB). Signalen (parquet) zitten
+    er niet in: na koppelen of verschuiven begint de geschiedenis opnieuw (``wis``). Alleen in het geheugen."""
+
+    MAX = 50
+
+    def __init__(self) -> None:
+        self.terug: list[_Stap] = []
+        self.vooruit: list[_Stap] = []
+
+    def nieuw(self, stap: _Stap) -> None:
+        self.terug = [*self.terug, stap][-self.MAX:]
+        self.vooruit = []
+
+    def wis(self) -> None:
+        self.terug, self.vooruit = [], []
+
+    def ongedaan(self) -> str | None:
+        """Laatste stap terugdraaien; geeft het label, of None als er niets ongedaan te maken is."""
+        return self._wissel(self.terug, self.vooruit, terug=True)
+
+    def opnieuw(self) -> str | None:
+        return self._wissel(self.vooruit, self.terug, terug=False)
+
+    @staticmethod
+    def _wissel(van: list[_Stap], naar: list[_Stap], terug: bool) -> str | None:
+        if not van:
+            return None
+        stap = van.pop()
+        naar.append(_Stap(stap.label, stap.root, _momentopname(stap.root), stap.verplaatst))
+        _herstel(stap.root, stap.db)
+        for bron, doel in (reversed(stap.verplaatst) if terug else stap.verplaatst):
+            a, b = (doel, bron) if terug else (bron, doel)
+            if a.exists() and not b.exists():
+                b.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(a), str(b))
+        _ruim_lege_mappen_op(stap.root)
+        return stap.label
+
+
+GESCHIEDENIS = Geschiedenis()
+_IN_STAP: contextvars.ContextVar[list | None] = contextvars.ContextVar("in_stap", default=None)
+
+
+def _stap(label: str, root_van=lambda self, *_, **__: self.root):
+    """Maakt van een publieke methode één stap in de geschiedenis (ook als die intern vaker schrijft)."""
+    def versier(functie):
+        @functools.wraps(functie)
+        def omhulsel(*args, **kwargs):
+            if _IN_STAP.get() is not None:  # binnen een andere stap: die telt
+                return functie(*args, **kwargs)
+            root = Path(root_van(*args, **kwargs))
+            voor, verplaatst = _momentopname(root), []
+            token = _IN_STAP.set(verplaatst)
+            try:
+                uitkomst = functie(*args, **kwargs)
+            finally:
+                _IN_STAP.reset(token)
+            if voor is not None and _momentopname(root) != voor:
+                GESCHIEDENIS.nieuw(_Stap(label, root, voor, verplaatst))
+            return uitkomst
+        return omhulsel
+    return versier
+
+
+def _momentopname(root: Path) -> bytes | None:
+    if not db_pad(root).exists():
+        return None
+    with closing(sqlite3.connect(db_pad(root), timeout=10)) as con:
+        return con.serialize()
+
+
+def _herstel(root: Path, data: bytes) -> None:
+    with closing(sqlite3.connect(":memory:")) as bron, closing(sqlite3.connect(db_pad(root), timeout=10)) as doel:
+        bron.deserialize(data)
+        bron.backup(doel)
+
+
+def _ruim_lege_mappen_op(root: Path) -> None:
+    """Na ongedaan maken van een nieuwe opname: zijn lege map weg, anders weigert dezelfde minuut later."""
+    with _db(root) as con:
+        bekend = {r[0] for r in con.execute("SELECT id FROM opnames")}
+    for map in (root / "opnames").glob("*"):
+        if map.is_dir() and map.name not in bekend and not any(map.iterdir()):
+            map.rmdir()
+
+
+def leeg_prullenbak(root: str | Path = DATA_ROOT) -> None:
+    """Bij het starten: verwijderde opnames uit een vorige sessie definitief weg (de geschiedenis is dan ook weg)."""
+    shutil.rmtree(Path(root) / PRULLENBAK, ignore_errors=True)
+
+
+PRULLENBAK = "_prullenbak"
+
+
+def versie(root: str | Path = DATA_ROOT) -> int:
+    """Verandert bij elke wijziging in de database: sleutel voor caches."""
+    pad = db_pad(root)
+    return pad.stat().st_mtime_ns if pad.exists() else 0
+
+
 def _schrijf(pad: Path, inhoud: str) -> None:
     tmp = pad.with_suffix(pad.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="") as bestand:
@@ -69,7 +285,7 @@ def _schrijf(pad: Path, inhoud: str) -> None:
 class Deelnemer:
     id: str
     naam: str
-    leeftijd: int | None
+    geboortejaar: int | None
     geslacht: str
     hartdecompensatie: bool
     andere_aandoening: str = ""
@@ -79,102 +295,92 @@ class Deelnemer:
     def weergave(self) -> str:
         return f"{self.naam} ({self.id})"
 
+    def leeftijd_op(self, tijd: datetime | pd.Timestamp) -> int | None:
+        """Leeftijd in het jaar van ``tijd``. Kan een jaar te hoog zijn: de verjaardag is niet bekend."""
+        return None if self.geboortejaar is None else pd.Timestamp(tijd).year - self.geboortejaar
+
 
 class Deelnemers:
     def __init__(self, root: str | Path = DATA_ROOT) -> None:
         self.root = Path(root)
 
     def alle(self) -> list[Deelnemer]:
-        if not self.pad.exists():
-            return []
-        df = pd.read_csv(self.pad, dtype=str, keep_default_na=False)
-        return [
-            Deelnemer(
-                id=rij["id"],
-                naam=rij["naam"],
-                leeftijd=int(rij["leeftijd"]) if rij["leeftijd"] else None,
-                geslacht=rij["geslacht"],
-                hartdecompensatie=rij["hartdecompensatie"] == "ja",
-                andere_aandoening=rij["andere_aandoening"],
-                aangemaakt=rij["aangemaakt"],
-            )
-            for _, rij in df.iterrows()
-        ]
+        with _db(self.root) as con:
+            return [_deelnemer(rij) for rij in con.execute("SELECT * FROM deelnemers ORDER BY nummer")]
 
+    @_stap("Deelnemer toegevoegd")
     def toevoegen(
         self,
         naam: str,
-        leeftijd: int | None,
+        geboortejaar: int | None,
         geslacht: str,
         hartdecompensatie: bool,
         andere_aandoening: str = "",
     ) -> Deelnemer:
-        alle = self.alle()
-        # Ook ID's van opnames meetellen: een verwijderde deelnemer mag zijn ID niet doorgeven aan een nieuwe.
-        gebruikt = [d.id for d in alle] + [o.info.deelnemer_id for o in Opname.alle(self.root)]
-        nummer = max((int(i[1:]) for i in gebruikt if i[1:].isdigit()), default=0) + 1
-        deelnemer = Deelnemer(
-            id=f"D{nummer:03d}",
-            naam=naam,
-            leeftijd=leeftijd,
-            geslacht=geslacht,
-            hartdecompensatie=hartdecompensatie,
-            andere_aandoening=andere_aandoening,
-            aangemaakt=iso(nu()),
-        )
+        deelnemer = Deelnemer("", naam, geboortejaar, geslacht, hartdecompensatie, andere_aandoening, iso(nu()))
         self._valideer(deelnemer)
-        self._schrijf_alle([*alle, deelnemer])
+        with _db(self.root) as con:
+            nummer = con.execute(
+                "INSERT INTO deelnemers (id, naam, geslacht, hartdecompensatie) VALUES (hex(randomblob(8)), '', '', 0)",
+            ).lastrowid
+            deelnemer.id = f"D{nummer:03d}"
+            _bewaar_deelnemer(con, deelnemer, nummer)
         return deelnemer
 
+    @_stap("Deelnemer gewijzigd")
     def bijwerken(self, deelnemer: Deelnemer) -> None:
         self._valideer(deelnemer)
-        alle = self.alle()
-        if deelnemer.id not in {d.id for d in alle}:
-            raise ValueError(f"Onbekende deelnemer '{deelnemer.id}'. Beschikbaar: {[d.id for d in alle]}")
-        self._schrijf_alle([deelnemer if d.id == deelnemer.id else d for d in alle])
+        with _db(self.root) as con:
+            rij = con.execute("SELECT nummer FROM deelnemers WHERE id = ?", (deelnemer.id,)).fetchone()
+            if rij is None:
+                raise ValueError(f"Onbekende deelnemer '{deelnemer.id}'. Beschikbaar: {self._ids(con)}")
+            _bewaar_deelnemer(con, deelnemer, rij["nummer"])
 
     def opnames(self, id: str) -> list[Opname]:
         return [o for o in Opname.alle(self.root) if o.info.deelnemer_id == id]
 
+    @_stap("Deelnemer verwijderd")
     def verwijder(self, id: str) -> None:
         """Alleen een deelnemer zonder opnames kan weg; opnames en annotaties blijven zo altijd herleidbaar."""
-        alle = self.alle()
-        if id not in {d.id for d in alle}:
-            raise ValueError(f"Onbekende deelnemer '{id}'. Beschikbaar: {[d.id for d in alle]}")
-        aantal = len(self.opnames(id))
-        if aantal:
-            raise ValueError(
-                f"Deelnemer {id} heeft {aantal} opname(s) en kan daarom niet verwijderd worden. "
-                f"Verwijder eerst de opnames (map `opnames/`) als dat echt de bedoeling is.",
-            )
-        self._schrijf_alle([d for d in alle if d.id != id])
+        with _db(self.root) as con:
+            if id not in self._ids(con):
+                raise ValueError(f"Onbekende deelnemer '{id}'. Beschikbaar: {self._ids(con)}")
+            aantal = con.execute("SELECT COUNT(*) FROM opnames WHERE deelnemer_id = ?", (id,)).fetchone()[0]
+            if aantal:
+                raise ValueError(
+                    f"Deelnemer {id} heeft {aantal} opname(s) en kan daarom niet verwijderd worden. "
+                    f"Verwijder eerst de opnames als dat echt de bedoeling is.",
+                )
+            con.execute("DELETE FROM deelnemers WHERE id = ?", (id,))
+
+    @staticmethod
+    def _ids(con: sqlite3.Connection) -> list[str]:
+        return [r[0] for r in con.execute("SELECT id FROM deelnemers ORDER BY nummer")]
 
     def _valideer(self, deelnemer: Deelnemer) -> None:
         if not deelnemer.naam.strip():
             raise ValueError("Vul een voornaam of patiënt-ID in.")
         if deelnemer.geslacht not in GESLACHTEN:
             raise ValueError(f"Onbekend geslacht '{deelnemer.geslacht}'. Beschikbaar: {GESLACHTEN}")
-        if deelnemer.leeftijd is not None and not 0 <= deelnemer.leeftijd <= 120:
-            raise ValueError(f"Ongeldige leeftijd: {deelnemer.leeftijd}")
+        if deelnemer.geboortejaar is not None and not EERSTE_JAAR <= deelnemer.geboortejaar <= nu().year:
+            raise ValueError(f"Ongeldig geboortejaar: {deelnemer.geboortejaar} (tussen {EERSTE_JAAR} en {nu().year})")
 
-    def _schrijf_alle(self, deelnemers: list[Deelnemer]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        df = pd.DataFrame(
-            [
-                {
-                    **asdict(d),
-                    "leeftijd": "" if d.leeftijd is None else d.leeftijd,
-                    "hartdecompensatie": "ja" if d.hartdecompensatie else "nee",
-                }
-                for d in deelnemers
-            ],
-            columns=[f.name for f in fields(Deelnemer)],
-        )
-        _schrijf(self.pad, df.to_csv(index=False))
 
-    @property
-    def pad(self) -> Path:
-        return self.root / "deelnemers.csv"
+def _deelnemer(rij: sqlite3.Row) -> Deelnemer:
+    return Deelnemer(
+        id=rij["id"], naam=rij["naam"], geboortejaar=rij["geboortejaar"], geslacht=rij["geslacht"],
+        hartdecompensatie=bool(rij["hartdecompensatie"]), andere_aandoening=rij["andere_aandoening"],
+        aangemaakt=rij["aangemaakt"],
+    )
+
+
+def _bewaar_deelnemer(con: sqlite3.Connection, d: Deelnemer, nummer: int) -> None:
+    # UPDATE, geen INSERT OR REPLACE: dat verwijdert eerst de rij, en dat weigert de foreign key van opnames.
+    con.execute(
+        "UPDATE deelnemers SET id = ?, naam = ?, geboortejaar = ?, geslacht = ?, hartdecompensatie = ?, "
+        "andere_aandoening = ?, aangemaakt = ? WHERE nummer = ?",
+        (d.id, d.naam, d.geboortejaar, d.geslacht, int(d.hartdecompensatie), d.andere_aandoening, d.aangemaakt, nummer),
+    )
 
 
 # --- annotaties --------------------------------------------------------------------------------------
@@ -219,27 +425,29 @@ def lees_annotaties(pad: str | Path) -> tuple[list[Annotatie], float | None]:
     klokcorrectie die bij het exporteren gold. Zonder die kolom of zonder live annotaties: ``None``.
     """
     df = pd.read_csv(pad, dtype=str, keep_default_na=False)
-    annotaties = [
-        Annotatie(
-            id=int(rij["id"]),
-            soort=rij["soort"],
-            label=rij["label"],
-            t_start=als_timestamp(rij["t_start"]),
-            t_eind=als_timestamp(rij["t_eind"]) if rij["t_eind"] else None,
-            tijdbasis=rij["tijdbasis"],
-            opmerking=rij["opmerking"],
-            beoordeling=rij["beoordeling"],
-            beoordeling_opmerking=rij["beoordeling_opmerking"],
-            plaatsing=rij.get("plaatsing", ""),  # ontbreekt in bestanden van vóór oktober 2026
-        )
-        for _, rij in df.iterrows()
-    ]
+    annotaties = [_annotatie(rij) for _, rij in df.iterrows()]
     live = df[df["tijdbasis"] == "pc"] if "t_start_data" in df else df.iloc[:0]
     correctie = None
     if len(live):
         verschil = als_timestamp(live["t_start_data"].iloc[0]) - als_timestamp(live["t_start"].iloc[0])
         correctie = round(verschil.total_seconds(), 3)
     return annotaties, correctie
+
+
+def _annotatie(rij) -> Annotatie:
+    """Uit een CSV-rij of databaserij (lege tekst of None = geen eind)."""
+    return Annotatie(
+        id=int(rij["id"]),
+        soort=rij["soort"],
+        label=rij["label"],
+        t_start=als_timestamp(rij["t_start"]),
+        t_eind=als_timestamp(rij["t_eind"]) if rij["t_eind"] else None,
+        tijdbasis=rij["tijdbasis"],
+        opmerking=rij["opmerking"] or "",
+        beoordeling=rij["beoordeling"] or "",
+        beoordeling_opmerking=rij["beoordeling_opmerking"] or "",
+        plaatsing=(rij["plaatsing"] if "plaatsing" in rij.keys() else "") or "",  # ontbreekt vóór oktober 2026
+    )
 
 
 # --- opnames -----------------------------------------------------------------------------------------
@@ -270,6 +478,7 @@ class Opname:
         self.annotaties = annotaties
 
     @classmethod
+    @_stap("Nieuwe opname", root_van=lambda cls, deelnemer, gestart, root=DATA_ROOT, **_: root)
     def nieuw(
         cls,
         deelnemer: Deelnemer,
@@ -280,14 +489,15 @@ class Opname:
         lokaal = als_timestamp(gestart).tz_convert(WEERGAVE_TZ)
         id = f"{lokaal:%Y-%m-%d_%H%M}_{deelnemer.id}"
         map = Path(root) / "opnames" / id
-        if map.exists():
-            raise ValueError(f"Opname {id} bestaat al. Kies die opname, of wacht een minuut.")
+        with _db(root) as con:
+            if map.exists() or con.execute("SELECT 1 FROM opnames WHERE id = ?", (id,)).fetchone():
+                raise ValueError(f"Opname {id} bestaat al. Kies die opname, of wacht een minuut.")
         map.mkdir(parents=True)
         info = OpnameInfo(
             id=id,
             deelnemer_id=deelnemer.id,
             gestart=iso(lokaal),
-            leeftijd_bij_opname=deelnemer.leeftijd,
+            leeftijd_bij_opname=deelnemer.leeftijd_op(lokaal),
             **velden,
         )
         opname = cls(map, info, [])
@@ -296,28 +506,49 @@ class Opname:
 
     @classmethod
     def laad(cls, map: str | Path) -> Opname:
+        """``map``: de map van de opname (``<root>/opnames/<id>``); de gegevens komen uit ``<root>/ecg.db``."""
         map = Path(map)
-        info_pad = map / "opname.json"
-        if not info_pad.exists():
-            raise FileNotFoundError(f"Geen opname.json in {map}")
-        info = OpnameInfo(**json.loads(info_pad.read_text(encoding="utf-8")))
-        pad = map / "annotaties.csv"
-        annotaties = lees_annotaties(pad)[0] if pad.exists() else []
-        return cls(map, info, annotaties)
+        with _db(map.parent.parent) as con:
+            rij = con.execute("SELECT info FROM opnames WHERE id = ?", (map.name,)).fetchone()
+            if rij is None:
+                raise FileNotFoundError(f"Geen opname '{map.name}' in {db_pad(map.parent.parent)}")
+            return cls._van_rij(con, map, rij["info"])
+
+    @classmethod
+    def _van_rij(cls, con: sqlite3.Connection, map: Path, info: str) -> Opname:
+        annotaties = [_annotatie(r) for r in con.execute(
+            "SELECT * FROM annotaties WHERE opname_id = ? ORDER BY id", (map.name,))]
+        return cls(map, OpnameInfo(**json.loads(info)), annotaties)
 
     @staticmethod
     def alle(root: str | Path = DATA_ROOT) -> list[Opname]:
-        map = Path(root) / "opnames"
-        if not map.exists():
-            return []
-        return [
-            Opname.laad(p)
-            for p in sorted(map.iterdir(), reverse=True)
-            if (p / "opname.json").exists()
-        ]
+        """Nieuwste eerst."""
+        with _db(root) as con:
+            return [Opname._van_rij(con, Path(root) / "opnames" / r["id"], r["info"])
+                    for r in con.execute("SELECT id, info FROM opnames ORDER BY id DESC").fetchall()]
+
+    @_stap("Opname verwijderd")
+    def verwijder_opname(self) -> None:
+        """Opname weg: gegevens, annotaties én de map met ruwe data, signalen en exports. De map gaat naar de
+        prullenbak in de datamap, zodat ongedaan maken hem terugzet; bij de volgende start wordt die geleegd."""
+        with _db(self.root) as con:
+            con.execute("DELETE FROM opnames WHERE id = ?", (self.info.id,))
+        if self.map.exists():
+            doel = self.root / PRULLENBAK / self.info.id
+            shutil.rmtree(doel, ignore_errors=True)
+            doel.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(self.map), str(doel))
+            verplaatst = _IN_STAP.get()
+            if verplaatst is not None:
+                verplaatst.append((self.map, doel))
+
+    @property
+    def root(self) -> Path:
+        return self.map.parent.parent
 
     # --- annotaties ---
 
+    @_stap("Annotatie toegevoegd")
     def voeg_toe(
         self,
         soort: str,
@@ -348,6 +579,7 @@ class Opname:
         self._opslaan()
         return annotatie
 
+    @_stap("Periode gestart")
     def start_periode(self, label: str, plaatsing: str = "") -> Annotatie:
         """Live: start een periode; een lopende periode wordt op hetzelfde moment gestopt."""
         tijd = nu()
@@ -361,26 +593,32 @@ class Opname:
         perioden = [a for a in self.annotaties if a.soort == "periode"]
         return max(perioden, key=lambda a: a.id).plaatsing if perioden else ""
 
+    @_stap("Experiment gewijzigd")
     def zet_experiment(self, experiment: str) -> None:
         self.info.experiment = experiment.strip()
         self._opslaan()
 
+    @_stap("Periode gestopt")
     def stop_periode(self) -> None:
         if self.actieve_periode is not None:
             self.actieve_periode.t_eind = als_timestamp(nu())
             self._opslaan()
 
+    @_stap("Moment gemarkeerd")
     def moment(self, label: str, opmerking: str = "") -> Annotatie:
         return self.voeg_toe("moment", label, nu(), opmerking=opmerking)
 
+    @_stap("Sync-sprong")
     def sync(self) -> Annotatie:
         return self.voeg_toe("sync", "sync-sprong", nu())
 
+    @_stap("Opname afgesloten")
     def sluit_live_af(self) -> None:
         self.stop_periode()
         self.info.live_afgesloten = True
         self._opslaan()
 
+    @_stap("Annotatie gewijzigd")
     def wijzig(self, id: int, **velden: object) -> Annotatie:
         annotatie = self.zoek(id)
         onbekend = set(velden) - set(ANNOTATIE_KOLOMMEN)
@@ -395,6 +633,7 @@ class Opname:
         self._opslaan()
         return annotatie
 
+    @_stap("Annotatie verwijderd")
     def verwijder(self, ids: list[int]) -> None:
         onbekend = set(ids) - {a.id for a in self.annotaties}
         if onbekend:
@@ -402,6 +641,7 @@ class Opname:
         self.annotaties = [a for a in self.annotaties if a.id not in ids]
         self._opslaan()
 
+    @_stap("Annotaties vervangen")
     def vervang_annotaties(self, annotaties: list[Annotatie], klokcorrectie_s: float | None) -> None:
         """Import: alle annotaties vervangen, en de klokcorrectie overnemen als die bekend is."""
         self.annotaties = list(annotaties)
@@ -432,6 +672,7 @@ class Opname:
         eind = self.naar_datatijd(annotatie.t_eind, annotatie.tijdbasis) if annotatie.t_eind is not None else None
         return start, eind
 
+    @_stap("Klokcorrectie gezet")
     def zet_klokcorrectie(self, correctie_s: float | None, bron: str) -> None:
         self.info.klokcorrectie_s = correctie_s
         self.info.klokcorrectie_bron = bron
@@ -477,6 +718,24 @@ class Opname:
 
         self.info.bronbestanden = sorted(b.name for b in bronbestanden)
         self._opslaan()
+        GESCHIEDENIS.wis()  # signalen zitten niet in de geschiedenis
+
+    def verschuif_signalen(self, seconden: float) -> None:
+        """Alle signaaltijden ``seconden`` verschuiven, bijvoorbeeld een uur als de P-Cardio-klok nog op zomertijd
+        stond. Annotaties in P-Cardio-tijd schuiven mee; de klokcorrectie (P-Cardio − pc) verandert evenveel, zodat
+        live annotaties op dezelfde plek in de data blijven. De ruwe bestanden blijven ongewijzigd."""
+        verschil = pd.Timedelta(seconds=seconden)
+        for naam, signaal in self.laad_signalen().items():
+            signaal.data["tijd"] = signaal.data["tijd"] + verschil
+            signaal.data.to_parquet(self.signalen_map / f"{naam}.parquet", index=False)
+        for a in self.annotaties:
+            if a.tijdbasis == "data":
+                a.t_start += verschil
+                a.t_eind = a.t_eind + verschil if a.t_eind is not None else None
+        if self.info.klokcorrectie_s is not None:
+            self.info.klokcorrectie_s = round(self.info.klokcorrectie_s + seconden, 3)
+        self._opslaan()
+        GESCHIEDENIS.wis()  # signalen zitten niet in de geschiedenis
 
     def laad_signalen(self) -> dict[str, Signaal]:
         meta_pad = self.signalen_map / "signalen.json"
@@ -493,13 +752,10 @@ class Opname:
             for naam, info in meta.items()
         }
 
+    @_stap("Opnamegegevens gewijzigd")
     def _opslaan(self) -> None:
-        _schrijf(self.map / "opname.json", json.dumps(asdict(self.info), indent=2, ensure_ascii=False))
-        df = pd.DataFrame(
-            [_rij(a) for a in sorted(self.annotaties, key=lambda a: a.id)],
-            columns=ANNOTATIE_KOLOMMEN,
-        )
-        _schrijf(self.map / "annotaties.csv", df.to_csv(index=False))
+        with _db(self.root) as con:
+            _bewaar_opname(con, self.info, self.annotaties)
 
     @property
     def actieve_periode(self) -> Annotatie | None:
@@ -525,3 +781,49 @@ class Opname:
         tijden = [a.t_start for a in self.annotaties if a.tijdbasis == "pc"]
         tijden += [a.t_eind for a in self.annotaties if a.tijdbasis == "pc" and a.t_eind is not None]
         return (min(tijden), max(tijden)) if tijden else None
+
+
+def _bewaar_opname(con: sqlite3.Connection, info: OpnameInfo, annotaties: list[Annotatie]) -> None:
+    """Opname en al haar annotaties in één keer (zelfde semantiek als het oude herschrijven van de bestanden)."""
+    con.execute(
+        "INSERT INTO opnames (id, deelnemer_id, info) VALUES (?, ?, ?) "
+        "ON CONFLICT (id) DO UPDATE SET deelnemer_id = excluded.deelnemer_id, info = excluded.info",
+        (info.id, info.deelnemer_id, json.dumps(asdict(info), ensure_ascii=False)),
+    )
+    con.execute("DELETE FROM annotaties WHERE opname_id = ?", (info.id,))
+    rijen = []
+    for a in annotaties:
+        rij = _rij(a)
+        rij["t_eind"] = rij["t_eind"] or None
+        rijen.append((info.id, *(rij[k] for k in ANNOTATIE_KOLOMMEN)))
+    con.executemany(
+        f"INSERT INTO annotaties (opname_id, {', '.join(ANNOTATIE_KOLOMMEN)}) "
+        f"VALUES (?, {', '.join('?' * len(ANNOTATIE_KOLOMMEN))})",
+        rijen,
+    )
+
+
+def _migreer_bestanden(con: sqlite3.Connection, root: Path) -> None:
+    """Eenmalig: het oude formaat (deelnemers.csv, opname.json, annotaties.csv) in de nieuwe database zetten."""
+    pad = root / "deelnemers.csv"
+    if pad.exists():
+        for _, rij in pd.read_csv(pad, dtype=str, keep_default_na=False).iterrows():
+            con.execute(
+                "INSERT INTO deelnemers VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (int(rij["id"][1:]), rij["id"], rij["naam"], _jaar(rij["aangemaakt"]) - int(rij["leeftijd"])
+                 if rij["leeftijd"] else None,
+                 rij["geslacht"], int(rij["hartdecompensatie"] == "ja"), rij["andere_aandoening"], rij["aangemaakt"]),
+            )
+    for info_pad in sorted((root / "opnames").glob("*/opname.json")):
+        info = OpnameInfo(**json.loads(info_pad.read_text(encoding="utf-8")))
+        info.id = info_pad.parent.name  # de map is leidend (signalen staan daar); 2026-10-21_1336 had een fout id
+        if not con.execute("SELECT 1 FROM deelnemers WHERE id = ?", (info.deelnemer_id,)).fetchone():
+            # Opname van een deelnemer die niet (meer) in deelnemers.csv staat: bewaar de opname, maak de deelnemer.
+            nummer = int(info.deelnemer_id[1:]) if info.deelnemer_id[1:].isdigit() else None
+            con.execute(
+                "INSERT INTO deelnemers (nummer, id, naam, geslacht, hartdecompensatie) "
+                "VALUES (?, ?, ?, 'onbekend', 0)",
+                (nummer, info.deelnemer_id, info.deelnemer_id),
+            )
+        pad = info_pad.parent / "annotaties.csv"
+        _bewaar_opname(con, info, lees_annotaties(pad)[0] if pad.exists() else [])

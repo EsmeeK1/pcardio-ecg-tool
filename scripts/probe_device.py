@@ -21,7 +21,7 @@ from serial.tools import list_ports
 
 BAUD = 460800
 DONGLE_NAME = "2M BLE Dongle"
-DONGLE_VID_PID = (0x1915, 0x521A)  # Nordic Semiconductor, as seen on the real dongle
+DONGLE_VID_PIDS = {(0x1915, 0x521A), (0x16D0, 0x06A1)}  # Nordic, and a second variant seen in Nov 2026
 PCARDIO_HEX = b"PCardio".hex().upper()  # 5043617264696F
 PIN = bytes([0x6C, 0x6F, 0x76, 0x65])
 STREAM_ADDR = 0x10000000
@@ -95,7 +95,7 @@ def find_port() -> str:
         print(f"  {p.device}: description={p.description!r} product={p.product!r} hwid={p.hwid!r}")
     for p in ports:
         # pyserial on Windows does not expose the bus-reported description, so fall back to VID:PID.
-        if DONGLE_NAME in f"{p.description} {p.product} {p.interface}" or (p.vid, p.pid) == DONGLE_VID_PID:
+        if DONGLE_NAME in f"{p.description} {p.product} {p.interface}" or (p.vid, p.pid) in DONGLE_VID_PIDS:
             return p.device
     sys.exit(f"No port with description '{DONGLE_NAME}' found. Pass the COM port as an argument.")
 

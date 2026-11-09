@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 
@@ -15,21 +16,21 @@ from kern.verwerking import dun_uit, ecg_filter, overlap_fractie, zes_leads, zoe
 
 
 def _deelnemer(root: Path):
-    return Deelnemers(root).toevoegen("Esmee", 30, "vrouw", False, "")
+    return Deelnemers(root).toevoegen("Esmee", 1996, "vrouw", False, "")
 
 
 def test_deelnemers(tmp_path: Path) -> None:
     register = Deelnemers(tmp_path)
-    a = register.toevoegen("Esmee", 30, "vrouw", False)
+    a = register.toevoegen("Esmee", 1996, "vrouw", False)
     b = register.toevoegen("P-1234", None, "onbekend", True, "astma")
     assert (a.id, b.id) == ("D001", "D002")
     opgeslagen = {d.id: d for d in register.alle()}["D002"]
     assert opgeslagen.andere_aandoening == "astma" and opgeslagen.hartdecompensatie is True
-    b.leeftijd = 61
+    b.geboortejaar = 1965
     register.bijwerken(b)
-    assert {d.id: d for d in register.alle()}["D002"].leeftijd == 61
+    assert {d.id: d for d in register.alle()}["D002"].geboortejaar == 1965
     with pytest.raises(ValueError, match="voornaam"):
-        register.toevoegen(" ", 1, "man", False)
+        register.toevoegen(" ", 2025, "man", False)
 
 
 def test_deelnemer_verwijderen(tmp_path: Path) -> None:
@@ -45,9 +46,10 @@ def test_deelnemer_verwijderen(tmp_path: Path) -> None:
     register.verwijder(zonder.id)
     assert [d.id for d in register.alle()] == [met.id]
 
-    # De hoogste deelnemer weghalen mag zijn ID niet vrijgeven zolang er opnames met dat ID zijn.
-    (tmp_path / "deelnemers.csv").unlink()
-    assert register.toevoegen("Nieuw", None, "onbekend", False).id == "D003"
+    # Een verwijderd ID wordt nooit opnieuw uitgegeven, ook niet het hoogste.
+    hoogste = register.toevoegen("Weg", None, "onbekend", False)
+    register.verwijder(hoogste.id)
+    assert register.toevoegen("Nieuw", None, "onbekend", False).id == "D004"
 
 
 def test_live_annoteren_en_laden(tmp_path: Path) -> None:
@@ -177,8 +179,13 @@ def test_experiment_en_plaatsing(tmp_path: Path) -> None:
 
 
 def test_bestanden_zonder_experiment_en_plaatsing(tmp_path: Path) -> None:
-    """Opnames van vóór deze velden: opname.json zonder experiment, annotaties.csv zonder plaatsing."""
-    map_ = tmp_path / "opnames" / "2026-10-07_1305_D003"
+    """Oud formaat zonder database, van vóór de velden experiment en plaatsing: wordt eenmalig overgenomen."""
+    (tmp_path / "deelnemers.csv").write_text(
+        "id,naam,leeftijd,geslacht,hartdecompensatie,andere_aandoening,aangemaakt\n"
+        "D002,Esmee,22,vrouw,nee,,2026-10-07T10:06:00.002+02:00\n",
+        encoding="utf-8",
+    )
+    map_ = tmp_path / "opnames" / "2026-10-07_1305_D003"  # D003 staat niet in deelnemers.csv
     map_.mkdir(parents=True)
     (map_ / "opname.json").write_text(
         '{"id": "2026-10-07_1305_D003", "deelnemer_id": "D003", "gestart": "2026-10-07T13:05:00.798+02:00"}',
@@ -193,7 +200,18 @@ def test_bestanden_zonder_experiment_en_plaatsing(tmp_path: Path) -> None:
     assert opname.info.experiment == "" and opname.annotaties[0].plaatsing == ""
     assert opname.laatste_plaatsing == ""
     opname.start_periode("Staan", "R2-Y2-G4")  # en daarna gewoon verder schrijven
-    assert "plaatsing" in (map_ / "annotaties.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert Opname.laad(map_).annotaties[-1].plaatsing == "R2-Y2-G4"
+    assert {d.id: d.naam for d in Deelnemers(tmp_path).alle()} == {"D002": "Esmee", "D003": "D003"}
+    assert Deelnemers(tmp_path).toevoegen("Nieuw", None, "onbekend", False).id == "D004"
+
+
+def test_opname_verwijderen(tmp_path: Path) -> None:
+    deelnemer = _deelnemer(tmp_path)
+    opname = Opname.nieuw(deelnemer, nu(), root=tmp_path)
+    opname.sync()
+    opname.verwijder_opname()
+    assert Opname.alle(tmp_path) == [] and not opname.map.exists()
+    Deelnemers(tmp_path).verwijder(deelnemer.id)  # nu zonder opnames
 
 
 def test_zes_leads_einthoven() -> None:
@@ -283,3 +301,110 @@ def test_selectie_tijden() -> None:
     assert eind == pd.Timestamp("2026-10-05 08:00:12.5", tz="UTC")
     assert selectie_tijden({"box": [], "points": []}) is None
     assert selectie_tijden(None) is None
+
+
+def test_mislukte_migratie_laat_geen_lege_database_achter(tmp_path: Path, monkeypatch) -> None:
+    import kern.opslag as opslag
+
+    (tmp_path / "deelnemers.csv").write_text(
+        "id,naam,leeftijd,geslacht,hartdecompensatie,andere_aandoening,aangemaakt\n"
+        "D002,Esmee,22,vrouw,nee,,2026-10-07T10:06:00.002+02:00\n",
+        encoding="utf-8",
+    )
+    echt = opslag._migreer_bestanden
+    monkeypatch.setattr(opslag, "_migreer_bestanden", lambda con, root: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        Deelnemers(tmp_path).alle()
+    assert not (tmp_path / "ecg.db").exists() and not list(tmp_path.glob("*.tmp"))
+    monkeypatch.setattr(opslag, "_migreer_bestanden", echt)
+    assert [d.id for d in Deelnemers(tmp_path).alle()] == ["D002"]  # volgende start: alsnog gemigreerd
+
+
+@pytest.mark.parametrize("naam", [
+    "Zoë O'Brien-Ünal", 'Robert"); DROP TABLE deelnemers;--', "陈伟 😀", "x" * 500, "  Spaties eromheen  ",
+])
+def test_deelnemer_bijzondere_namen(tmp_path: Path, naam: str) -> None:
+    register = Deelnemers(tmp_path)
+    d = register.toevoegen(naam, 1986, "anders", False, "astma, diabetes; 'x'")
+    opgeslagen = {x.id: x for x in register.alle()}[d.id]
+    assert opgeslagen.naam == naam and opgeslagen.andere_aandoening == "astma, diabetes; 'x'"
+
+
+def test_deelnemer_dubbele_naam_mag_en_ongeldige_velden(tmp_path: Path) -> None:
+    register = Deelnemers(tmp_path)
+    a, b = register.toevoegen("Esmee", 2004, "vrouw", False), register.toevoegen("Esmee", 2004, "vrouw", False)
+    assert a.id != b.id and len(register.alle()) == 2
+    for jaar in (1899, 2999):
+        with pytest.raises(ValueError, match="geboortejaar"):
+            register.toevoegen("Ongeldig", jaar, "man", False)
+    with pytest.raises(ValueError, match="geslacht"):
+        register.toevoegen("Iemand", 1996, "x", False)
+    assert len(register.alle()) == 2  # een geweigerde deelnemer laat niets achter, ook geen ID
+    assert register.toevoegen("Volgende", None, "onbekend", False).id == "D003"
+
+
+def test_oude_database_met_leeftijd_wordt_geboortejaar(tmp_path: Path) -> None:
+    import sqlite3
+
+    import kern.opslag as opslag
+
+    Deelnemers(tmp_path).alle()  # nieuwe database (versie 1); maak er een van vóór 9-11-2026 van
+    con = sqlite3.connect(tmp_path / "ecg.db")
+    con.execute("ALTER TABLE deelnemers RENAME COLUMN geboortejaar TO leeftijd")
+    con.execute("INSERT INTO deelnemers (nummer, id, naam, leeftijd, geslacht, hartdecompensatie, aangemaakt) "
+                "VALUES (1, 'D001', 'Esmee', 22, 'vrouw', 0, '2026-10-07T10:06:00.002+02:00')")
+    con.execute("PRAGMA user_version = 0")
+    con.commit()
+    con.close()
+    d = Deelnemers(tmp_path).alle()[0]
+    assert d.geboortejaar == 2004
+    opname = Opname.nieuw(d, pd.Timestamp("2027-03-01 10:00", tz="UTC"), root=tmp_path)
+    assert opname.info.leeftijd_bij_opname == 23
+    with sqlite3.connect(tmp_path / "ecg.db") as con:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == opslag.SCHEMA_VERSIE
+
+
+def test_ongedaan_maken_en_opnieuw_doen(tmp_path: Path) -> None:
+    from kern.opslag import GESCHIEDENIS
+
+    GESCHIEDENIS.wis()
+    register = Deelnemers(tmp_path)
+    d = register.toevoegen("Undo", 1996, "vrouw", False)
+    opname = Opname.nieuw(d, nu(), root=tmp_path)
+    opname.start_periode("Zitten")  # één stap, ook al schrijft hij intern twee keer
+    opname.wijzig(opname.annotaties[0].id, label="Staan")
+    assert [s.label for s in GESCHIEDENIS.terug][-3:] == ["Nieuwe opname", "Periode gestart", "Annotatie gewijzigd"]
+
+    assert GESCHIEDENIS.ongedaan() == "Annotatie gewijzigd"
+    assert Opname.laad(opname.map).annotaties[0].label == "Zitten"
+    assert GESCHIEDENIS.opnieuw() == "Annotatie gewijzigd"
+    assert Opname.laad(opname.map).annotaties[0].label == "Staan"
+
+    (opname.map / "ruw").mkdir()
+    (opname.map / "ruw" / "data.txt").write_text("ruw")
+    Opname.laad(opname.map).verwijder_opname()
+    assert not opname.map.exists() and Opname.alle(tmp_path) == []
+    assert GESCHIEDENIS.ongedaan() == "Opname verwijderd"  # map en gegevens terug
+    assert (opname.map / "ruw" / "data.txt").read_text() == "ruw" and len(Opname.alle(tmp_path)) == 1
+    assert GESCHIEDENIS.opnieuw() == "Opname verwijderd"
+    assert not opname.map.exists()
+    GESCHIEDENIS.ongedaan()
+    shutil.rmtree(opname.map / "ruw")  # een map met data blijft bij ongedaan maken staan; leeg wordt hij opgeruimd
+
+    GESCHIEDENIS.ongedaan()  # Annotatie gewijzigd
+    GESCHIEDENIS.ongedaan()  # Periode gestart
+    assert GESCHIEDENIS.ongedaan() == "Nieuwe opname"
+    assert Opname.alle(tmp_path) == [] and not opname.map.exists()  # lege map opgeruimd
+    register.toevoegen("Nieuw", None, "onbekend", False)  # nieuwe actie: opnieuw doen kan niet meer
+    assert GESCHIEDENIS.opnieuw() is None
+
+
+def test_signalen_wissen_de_geschiedenis(tmp_path: Path) -> None:
+    from kern.opslag import GESCHIEDENIS
+
+    GESCHIEDENIS.wis()
+    t0 = pd.Timestamp("2026-10-05 08:00:00", tz="UTC")
+    opname = Opname.nieuw(_deelnemer(tmp_path), t0, root=tmp_path)
+    assert GESCHIEDENIS.terug
+    opname.bewaar_signalen(_signalen(t0), [])
+    assert GESCHIEDENIS.ongedaan() is None

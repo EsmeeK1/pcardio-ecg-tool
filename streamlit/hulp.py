@@ -11,16 +11,19 @@ DEELNEMERS = (
     "van de P-Cardio, niet de naam: dat veld wordt niet versleuteld."
 )
 NAAM = "Voornaam of patiënt-ID: wat voor jullie het makkelijkst herkenbaar is."
-LEEFTIJD = "In jaren. Leeg laten als het onbekend is."
+GEBOORTEJAAR = (
+    "Alleen het jaar. Daarmee wordt bij elke opname de leeftijd berekend (kan een jaar afwijken: de verjaardag is "
+    "niet bekend). Leeg laten als het onbekend is."
+)
 GESLACHT = "Kies *onbekend* als het niet is opgegeven."
 HARTDECOMPENSATIE = "Bekende hartdecompensatie (hartfalen) ja of nee."
 ANDERE_AANDOENING = "Andere bekende ziekte of aandoening, in eigen woorden. Leeg = geen."
 BEWERK_DEELNEMER = "Kies een deelnemer om de gegevens aan te passen. Het ID blijft hetzelfde."
 VERWIJDER_DEELNEMER = (
-    "Haalt de deelnemer uit `deelnemers.csv`. Dat kan alleen als er **geen opnames** van deze deelnemer zijn, zodat "
+    "Haalt de deelnemer uit de database. Dat kan alleen als er **geen opnames** van deze deelnemer zijn, zodat "
     "opnames en annotaties altijd bij een deelnemer horen. Het ID wordt daarna niet opnieuw uitgegeven."
 )
-ALLE_DEELNEMERS = "Alle vastgelegde deelnemers, uit `streamlit/data/deelnemers.csv`."
+ALLE_DEELNEMERS = "Alle vastgelegde deelnemers, uit de database `streamlit/data/ecg.db`."
 
 # --- live ---
 LIVE = (
@@ -153,8 +156,10 @@ FILTER = (
 ACC = "Accelerometer X/Y/Z en de grootte |acc| (zwart). Laat zien wanneer en hoe hard er bewogen wordt."
 GYRO = "Gyroscoop X/Y/Z en de grootte |gyro| (zwart). Laat draaibewegingen zien, zoals omdraaien of bukken."
 BEWEGING = (
-    "Per segment van 20 s, uit de accelerometer (UC-1). **Beweging**: spreiding van |acc| boven 0,029 g. **Lopen**: "
-    "beweging met een stapritme van 1,2–2,8 Hz. **Liggend**: recorder meer dan 45° gekanteld (alleen met sticker). "
+    "Uit de accelerometer (UC-1). **Beweging**: spreiding van |acc| over 20 s boven 0,029 g. **Lopen**: beweging met "
+    "een stapritme van 1,2–2,8 Hz. "
+    "**Liggend**: recorder meer dan 45° gekanteld (alleen met sticker); live over de laatste 5 s, met een marge: "
+    "liggend pas boven 50°, terug naar rechtop onder 40°. "
     "Zitten en staan zijn allebei *rechtop*: met de recorder op de borst zijn ze niet te onderscheiden. De gekleurde "
     "vlakken zijn je annotaties, ter vergelijking. Hover over een balk voor de kenmerken."
 )
