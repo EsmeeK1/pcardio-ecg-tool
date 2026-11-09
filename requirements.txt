@@ -11,3 +11,9 @@ pyarrow
 
 # P-Cardio dongle
 pyserial
+
+# Desktop-app (desktop/)
+PySide6==6.12.0
+pyqtgraph==0.14.0
+# handleiding samenvoegen (desktop/handleiding/maak_pdf.py)
+pypdf

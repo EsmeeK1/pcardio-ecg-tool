@@ -1,8 +1,16 @@
 # pcardio-ecg-tool
 
-Streamlit-app van AppBakkers voor P-Cardio-opnames: deelnemers vastleggen, live annoteren, live ECG via de
-dongle, P-Cardio-data koppelen, bekijken & annoteren en exporteren. Uitleg over de app en de code staat in
-[streamlit/README.md](streamlit/README.md).
+App van AppBakkers voor P-Cardio-opnames: deelnemers en opnames beheren, live annoteren, live ECG/acc/gyro via de
+dongle, P-Cardio-data koppelen, bekijken & annoteren en exporteren. Er zijn twee versies op dezelfde data:
+
+- **Desktop-app** (`desktop/`, PySide6 + pyqtgraph): live plots zonder geflikker, knoppen reageren direct.
+  Dubbelklik **`ECG-tool.cmd`**.
+- **Streamlit-app** (`streamlit/`): dezelfde functies in de browser. Uitleg over de app en de code staat in
+  [streamlit/README.md](streamlit/README.md).
+
+**Data:** `streamlit/data/ecg.db` (SQLite: deelnemers, opnames, annotaties) en per opname een map met de ruwe
+bestanden, signalen (parquet) en exports. Het oudere formaat (`deelnemers.csv`, `opname.json`, `annotaties.csv`)
+wordt bij de eerste start eenmalig overgenomen; die bestanden blijven staan maar worden daarna niet meer gebruikt.
 
 ## Installeren (eenmalig, Windows)
 
@@ -11,7 +19,9 @@ script maakt `.venv` aan met Python 3.12 en installeert `requirements.txt`.
 
 ## Starten
 
-Altijd vanuit de projectroot, anders wordt `.streamlit/config.toml` niet geladen:
+**Desktop-app:** dubbelklik `ECG-tool.cmd`, of `.venv\Scripts\python desktop\app.py`.
+
+**Streamlit-app:** altijd vanuit de projectroot, anders wordt `.streamlit/config.toml` niet geladen:
 
 ```powershell
 .venv\Scripts\Activate.ps1
@@ -25,7 +35,8 @@ Krijg je `UnauthorizedAccess` bij het activeren? Voer eenmalig uit:
 
 | Map | Inhoud |
 |---|---|
-| `streamlit/` | de app: pagina's, `kern/` (logica zonder Streamlit), tests |
+| `desktop/` | desktop-app: `app.py` (hoofdvenster), `beheer.py`, `live.py`, `analyse.py` |
+| `streamlit/` | Streamlit-app: pagina's, `kern/` (logica zonder UI, ook gebruikt door de desktop-app), tests |
 | `scripts/probe_device.py` | losse hardwaretest van dongle en recorder, buiten de app om |
 | `docs/` | [opnameprotocol](docs/opnameprotocol-p-cardio.md) en handleidingen van de P-Cardio |
 | `mobiel/` | web-app voor de telefoon: annoteren zonder pc, bijv. in de sportschool (zie hieronder) |
