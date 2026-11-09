@@ -1,0 +1,219 @@
+<!-- Bron van de handleiding van de desktop-app (de liggende pagina's). Aanpassen en opnieuw maken met:
+     .venv\Scripts\python desktop\handleiding\maak_pdf.py
+     Dat zet er de P-Cardio-instructie voor de deelnemer (staand, pagina 1–4 van streamlit/handleiding.pdf) vóór.
+     Schermafdrukken staan in afbeeldingen/ (breedte ± 2000 px). Een nieuwe pagina: style="page-break-before: always". -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Handleiding ECG-tool P-Cardio</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9.5pt; color: #1F2A30; }
+  h1 { color: #1E6F80; font-size: 20pt; margin: 0px; }
+  h2 { color: #1E6F80; font-size: 14pt; margin-top: 8px; margin-bottom: 4px; }
+  h3 { color: #14525F; font-size: 10.5pt; margin-top: 6px; margin-bottom: 2px; }
+  p, li { margin-top: 2px; margin-bottom: 2px; }
+  ul, ol { margin-top: 0px; margin-bottom: 2px; }
+  .sub { color: #4A6A72; }
+  .tip { background-color: #E0F4F9; }
+  .let { background-color: #FFF4E5; }
+  td, th { padding: 2px 6px; vertical-align: top; }
+  th { background-color: #E0F4F9; color: #14525F; text-align: left; }
+  kbd { font-family: Consolas, monospace; background-color: #ECEFF1; }
+</style>
+</head>
+<body>
+
+<h1>Handleiding ECG-tool P-Cardio</h1>
+<p class="sub">Desktop-app · versie 1.1 (9-11-2026) · AppBakkers, Secu-Sense WP4 · voor onderzoekers en zorgverleners.
+De pagina's hiervoor zijn de instructie voor de deelnemer.</p>
+
+<table width="100%" cellspacing="0"><tr>
+<td width="55%">
+<p>Met de ECG-tool leg je deelnemers vast, volg je een opname met de P-Cardio live, houd je bij wat de deelnemer doet,
+koppel je na afloop de data van de recorder en bekijk en beoordeel je het ECG met de beweging eronder.</p>
+<h3>Zo verloopt een opname</h3>
+<table cellspacing="0" width="100%">
+<tr><th>Wanneer</th><th>Wat</th><th>Scherm</th></tr>
+<tr><td><b>Vooraf</b></td><td>Deelnemer vastleggen; ID in het User Id-veld van de P-Cardio</td><td>Deelnemers</td></tr>
+<tr><td><b>Tijdens</b></td><td>Verbinden, live meekijken, sync-sprong, activiteiten en momenten aanklikken</td><td>Live</td></tr>
+<tr><td><b>Na afloop</b></td><td>Bestanden van de recorder inlezen, koppelen, klokcorrectie bevestigen</td><td>Data koppelen</td></tr>
+<tr><td><b>Analyse</b></td><td>Per activiteit bekijken, annoteren en het signaal beoordelen</td><td>Bekijken &amp; annoteren</td></tr>
+<tr><td><b>Optioneel</b></td><td>Alles in één CSV voor verdere analyse</td><td>Opnames → Exporteren</td></tr>
+</table>
+</td>
+<td width="45%">
+<h3>Sneltoetsen</h3>
+<table cellspacing="0">
+<tr><td><kbd>Ctrl+Z</kbd></td><td>Laatste wijziging ongedaan maken (in een tekstveld: de getypte tekst)</td></tr>
+<tr><td><kbd>Ctrl+Shift+Z</kbd></td><td>Opnieuw doen</td></tr>
+<tr><td><kbd>Ctrl+R</kbd></td><td>Bekijken: terug naar de beginweergave</td></tr>
+<tr><td><kbd>Shift+←</kbd>/<kbd>→</kbd></td><td>Bekijken: één venster terug of verder</td></tr>
+</table>
+<p class="tip"><b>Tip:</b> bij bijna elk veld en elke knop staat uitleg als je er met de muis op blijft staan.</p>
+</td>
+</tr></table>
+
+<h2>1. Starten en de datamap</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="34%"><img src="afbeeldingen/datamap.png" width="500"></td>
+<td width="66%">
+<p>Dubbelklik op <b>ECG-tool.cmd</b> in de projectmap. Alle gegevens staan in één <b>datamap</b> (bovenin de
+titelbalk): de database <i>ecg.db</i> (deelnemers, opnames, annotaties) en per opname een map met de ruwe
+P-Cardio-bestanden en de signalen.</p>
+<h3>Dezelfde data op meerdere computers (OneDrive of SharePoint)</h3>
+<ol>
+<li>Maak in SharePoint een map (bijv. <i>AI-Projecten/secu-sense/pcardio-ecg-data</i>), geef alleen wie het nodig
+heeft toegang, en kies <b>Snelkoppeling toevoegen aan Mijn bestanden</b>.</li>
+<li>Rechtsklik in Verkenner op die map → <b>Altijd op dit apparaat behouden</b>.</li>
+<li>In de app: <b>Datamap…</b> → <b>Map kiezen…</b>. Is de map leeg, dan biedt de app aan de huidige data te kopiëren
+(alleen op de computer met de complete data). Start de app daarna opnieuw.</li>
+</ol>
+<p>De app werkt met een lokale kopie van de database en zet die bij afsluiten (en elke 10 minuten) in de gedeelde map.
+Werk op <b>één computer tegelijk</b>: anders meldt de app <i>"In gebruik op … sinds …"</i>, en hij wacht tot OneDrive de
+laatste versie binnen heeft.</p>
+<p class="let"><b>Let op:</b> de datamap bevat gezondheidsgegevens en namen: nooit in een persoonlijke Dropbox of
+Google Drive, en bewerk de bestanden erin niet met de hand.</p>
+</td>
+</tr></table>
+
+<!-- ===================================================================================================== -->
+<h2>2. Deelnemers</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="52%"><img src="afbeeldingen/deelnemers.png" width="720"></td>
+<td width="48%">
+<ul>
+<li><b>Nieuw</b> → naam of patiënt-ID, geboortejaar (leeg = onbekend), geslacht en eventuele aandoeningen →
+<b>Opslaan</b>. De deelnemer krijgt het volgende vrije ID (D001, D002, …); een ID wordt nooit opnieuw uitgegeven.</li>
+<li>Klik op een rij om de gegevens te wijzigen. Verwijderen kan alleen bij een deelnemer zonder opnames.</li>
+<li>De kolom <b>Opnames</b> telt hoeveel opnames iemand heeft.</li>
+</ul>
+<p class="let"><b>Let op:</b> zet in het User Id-veld van de P-Cardio het <b>ID</b> (bijv. D001), nooit de naam: dat
+veld wordt niet versleuteld.</p>
+</td>
+</tr></table>
+
+<h2 style="page-break-before: always">3. Opnames</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="52%"><img src="afbeeldingen/opnames.png" width="720"></td>
+<td width="48%">
+<ul>
+<li>Alle opnames, nieuwste eerst. Filter op deelnemer of zoek op ID, experiment of notities.</li>
+<li>Rechts pas je de gegevens aan (plaatsing elektroden, experiment, notities) → <b>Gegevens opslaan</b>.</li>
+<li>Knoppen: <b>Bekijken &amp; annoteren</b> (of dubbelklik op een rij), <b>Data koppelen</b>, <b>Live hervatten</b>
+(alleen bij een open opname), <b>Exporteren…</b>, <b>Map openen</b> en <b>Opname verwijderen…</b>.</li>
+<li><b>Data</b>: is de P-Cardio-data gekoppeld; <b>Klokcorrectie</b>: de gebruikte correctie.</li>
+<li><b>Exporteren</b>: de hele opname of één periode (met marge), eventueel met de 6 leads. Eén rij per ECG-sample
+met acc, gyro en annotaties, plus een los annotatiebestand, in de map <i>export</i> van de opname.</li>
+</ul>
+</td>
+</tr></table>
+
+<!-- ===================================================================================================== -->
+<h2>4. Live</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="55%"><img src="afbeeldingen/live.png" width="720">
+<h3>Wat je ziet</h3>
+<ul>
+<li><b>ECG</b> (Ecg1 = afleiding I, Ecg2 = afleiding II) en met de vinkjes <b>accelerometer</b> en <b>gyroscoop</b>.
+De tijdas loopt van −10 s (10 seconden geleden) tot 0 (nu); het venster is 5, 10 of 20 s.</li>
+<li><b>Rechtsboven</b>: de <b>houding</b> (rechtop/liggend, laatste 5 s, elke seconde) en de <b>activiteit</b>
+(rust/beweging/lopen, laatste 20 s, elke 5 s). Bij <b>Bevestiging</b> kies je sticker of lanyard; aan een lanyard is
+de houding onbekend.</li>
+<li><b>Gekleurde balk</b> bij een probleem: amber bij lead-off, een ECG tegen de rand van het meetbereik of een
+ondersteboven geplakte recorder; rood als de verbinding weg is of er geen data komt.</li>
+</ul>
+</td>
+<td width="45%">
+<h3>Verbinden</h3>
+<ol>
+<li>Steek de dongle in een USB-poort; de app vindt hem zelf, ook in een andere poort.</li>
+<li>Druk kort op de knop van de P-Cardio (hij gaat adverteren) en klik op <b>Verbinden</b>.</li>
+<li>Klik op <b>Start</b>: pas dan verschijnen de plots.</li>
+</ol>
+<p>Onder de knoppen: batterij, of de recorder zelf opneemt, firmware en de tellers (pakketten, CRC-fouten, gaten).
+Staat er <i>"neemt NIET op"</i>, houd dan de knop van de P-Cardio 1–3 s ingedrukt (lampje groen).</p>
+<h3>Loggen tijdens een opname</h3>
+<ol>
+<li><b>Nieuwe opname…</b>: kies de deelnemer en vul de gegevens in (of <b>Hervatten…</b>).</li>
+<li><b>Sync-sprong</b> aan het begin (en liefst ook aan het eind): de deelnemer springt, jij klikt bij het landen.
+Daarmee lijnt de app later de klokken uit.</li>
+<li>Klik bij elke nieuwe activiteit op het label; de lopende periode stopt vanzelf. <b>Stop periode</b> voor een
+pauze; een eigen activiteit typ je bij <i>Andere activiteit…</i>.</li>
+<li>Iets bijzonders (hoest, losse plakker)? <b>Markeer nu</b> of typ een eigen moment.</li>
+<li>In het <b>logboek</b> pas je label, plaatsing en opmerking aan met een dubbelklik.</li>
+<li>Klaar: <b>Opname afsluiten…</b>.</li>
+</ol>
+<p class="tip"><b>Tip:</b> kijken zonder te loggen kan ook: verbind en start zonder een opname te kiezen.</p>
+</td>
+</tr></table>
+
+<!-- ===================================================================================================== -->
+<h2 style="page-break-before: always">5. Data koppelen</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="55%"><img src="afbeeldingen/koppelen.png" width="720"></td>
+<td width="45%">
+<h3>1. Bestanden inlezen</h3>
+<p>Kies de bestanden van de recorder (<i>data_*.txt</i> of de CSV-export van 2M), een eerdere export van deze app en/of
+een annotatiebestand van de telefoon-app; los, in een map of in een .zip. De app herkent zelf wat wat is.</p>
+<h3>2. Koppelen aan een opname</h3>
+<p>De app stelt de opname voor waarvan de live annotaties binnen de data vallen. Kies die (of <b>Nieuwe opname</b>) →
+<b>Koppel</b>. Heeft de opname al data of annotaties, dan vraagt de app eerst of die vervangen mogen worden.</p>
+<h3>3. Klokcorrectie</h3>
+<p>De klok van de pc en die van de P-Cardio lopen uiteen. <b>Zoek sync-sprongen</b> zoekt de landing in de
+accelerometer (stippellijn = gelogd moment, oranje = gevonden piek). Klopt het: <b>Gebruik voorstel</b>. Bij meerdere
+sync-sprongen neemt de app de mediaan, zodat één verkeerde klik het niet scheeftrekt.</p>
+<ul>
+<li>Correctie van ± <b>één uur</b>: de P-Cardio staat waarschijnlijk nog op zomer- of wintertijd; de app stelt voor de
+data een uur te verschuiven.</li>
+<li>Meer dan 5 minuten: de app waarschuwt.</li>
+<li>Geen sync-sprong of geen duidelijke piek: vul de correctie in bij <b>Handmatige correctie</b>.</li>
+</ul>
+</td>
+</tr></table>
+
+<!-- ===================================================================================================== -->
+<h2>6. Bekijken &amp; annoteren</h2>
+<table width="100%" cellspacing="0"><tr>
+<td width="55%"><img src="afbeeldingen/bekijken.png" width="720">
+<h3>Een annotatie aanpassen of beoordelen</h3>
+<p>Klik op een rij in de tabel: het venster springt erheen en de selectie staat op die annotatie. Versleep begin en
+eind, pas label, plaatsing of opmerking aan, kies een <b>beoordeling van het signaal</b> (schoon / ruis, QRS herkenbaar
+/ onbruikbaar) en klik op <b>Wijzigingen opslaan</b>. Houd <b>label</b> (wat de deelnemer deed) en <b>beoordeling</b>
+(hoe het signaal eruitziet) bewust uit elkaar: lopen betekent niet automatisch een slecht signaal.</p>
+</td>
+<td width="45%">
+<h3>Rondkijken</h3>
+<ul>
+<li>Kies de opname bovenin; filter op deelnemer, datum of sticker/lanyard.</li>
+<li><b>Overzicht</b>: de hele opname met de annotaties als gekleurde vlakken. Sleep het <b>oranje venster</b>, of zoom
+met het muiswiel in het detail.</li>
+<li><b>UC-1-balk</b>: per 20 s de activiteit (rust, beweging, lopen) en de houding (rechtop, liggend); muis erop voor de
+kenmerken.</li>
+<li><b>Detail</b>: het ECG van het venster. I en II worden gemeten; III, aVR, aVL en aVF zijn daaruit berekend.
+<b>Accelerometer</b> en <b>Gyroscoop</b> komen er als eigen rij onder. Het filter (0,5–40 Hz) geldt alleen voor de
+weergave.</li>
+<li>Tabel: in het venster = <b>lichtoranje</b>, aangeklikt = <b>lichtblauw</b>.</li>
+</ul>
+<h3>Annoteren</h3>
+<ol>
+<li>Sleep de oranje <b>selectie</b> in het detail over het stuk dat je wilt annoteren.</li>
+<li>Klik op een label: de periode wordt toegevoegd en de selectie schuift door naar het volgende stuk.</li>
+<li>Voor een moment: <b>Moment op begin selectie</b>.</li>
+</ol>
+</td>
+</tr></table>
+
+<h2>7. Als het niet werkt</h2>
+<table cellspacing="0" width="100%">
+<tr><th>Probleem</th><th>Oplossing</th><th>Probleem</th><th>Oplossing</th></tr>
+<tr><td>Dongle niet gevonden</td><td>Andere USB-poort; de app zoekt elke paar seconden opnieuw (of ↻ naast Poort).</td>
+<td>Houding "liggend" terwijl iemand zit</td><td>Zit de recorder scheef of een kwartslag gedraaid? Rechtop hoort bij ± 0–20°.</td></tr>
+<tr><td>"Geen recorder gevonden"</td><td>Druk kort op de knop van de P-Cardio en verbind opnieuw.</td>
+<td>"Zit de recorder ondersteboven?"</td><td>Draai de recorder om op de sticker.</td></tr>
+<tr><td>Verbonden, maar geen plot</td><td>Klik op <b>Start</b>: verbinden start de stream nog niet.</td>
+<td>"In gebruik op een andere computer"</td><td>Sluit de app daar af, wacht op OneDrive, <b>Opnieuw proberen</b>.</td></tr>
+<tr><td colspan="2"></td><td>Venster "Fout in de ECG-tool"</td><td>Schermafdruk van de melding naar AppBakkers.</td></tr>
+</table>
+
+</body>
+</html>
