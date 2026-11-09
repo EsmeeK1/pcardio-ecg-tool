@@ -133,18 +133,22 @@ def test_binair_heen_en_terug(tmp_path: Path) -> None:
     np.testing.assert_array_equal(per_naam["lead_off"].data["LeadOff"].to_numpy(), verwacht["lead_off"])
 
 
-@pytest.mark.parametrize(
-    ("apparaatklok", "echte_tijd"),
-    [
-        ("2026-11-04 21:02:13", "2026-11-04 20:02:13"),  # winter: klok staat nog op zomertijd, een uur terug
-        ("2026-10-06 17:14:37", "2026-10-06 17:14:37"),  # zomer: klok klopt
-    ],
-)
-def test_apparaatklok_vast_op_zomertijd(tmp_path: Path, apparaatklok: str, echte_tijd: str) -> None:
+@pytest.mark.parametrize("apparaatklok", ["2026-11-04 21:02:13", "2026-10-06 17:14:37"])  # winter en zomer
+def test_apparaatklok_is_nederlandse_kloktijd(tmp_path: Path, apparaatklok: str) -> None:
     pad = tmp_path / "data.txt"
     _maak_binair(pad, int(pd.Timestamp(apparaatklok).timestamp()), seconden=1)
     ecg = {s.naam: s for s in lees_bestand(pad)[0]}["ecg"]
-    assert ecg.data["tijd"].iloc[49] == pd.Timestamp(echte_tijd, tz="Europe/Amsterdam")
+    assert ecg.data["tijd"].iloc[49] == pd.Timestamp(apparaatklok, tz="Europe/Amsterdam")
+
+
+def test_apparaatklok_over_de_wissel_doorlopend() -> None:
+    from kern.pcardio import apparaattijd_naar_utc
+
+    # 25 okt 2026 03:00 zomertijd -> 02:00 wintertijd; de recorder schakelt niet om en telt gewoon door.
+    t0 = pd.Timestamp("2026-10-25 02:30:00").timestamp()
+    tijden = apparaattijd_naar_utc(np.array([t0, t0 + 3600]))
+    assert (tijden.iloc[1] - tijden.iloc[0]) == pd.Timedelta(hours=1)
+    assert tijden.iloc[0] == pd.Timestamp("2026-10-25 02:30:00+02:00")
 
 
 def test_binair_verkeerde_prefix(tmp_path: Path) -> None:
