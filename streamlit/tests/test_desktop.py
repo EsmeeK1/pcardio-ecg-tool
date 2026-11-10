@@ -298,3 +298,27 @@ def test_live_waarschuwt_bij_ondersteboven_recorder(venster, monkeypatch) -> Non
         assert ("ondersteboven" in live.waarschuwing.text() and not live.waarschuwing.isHidden()) == verwacht
     monkeypatch.setattr(live.sessie, "toestand", "verbonden")
     live._ontkoppel()
+
+
+def test_koppelen_bestanden_uit_twee_mappen_toevoegen(venster, tmp_path: Path) -> None:
+    from kern.export import gecombineerd
+
+    app, v = venster
+    t0 = pd.Timestamp("2026-10-13 09:00:00", tz="UTC")
+    bron = Opname.nieuw(Deelnemers(DATA_ROOT).toevoegen("Twee mappen", 1996, "man", False), t0, root=DATA_ROOT)
+    signalen = _signalen(t0)
+    bron.voeg_toe("periode", "Zitten", t0 + pd.Timedelta(seconds=2), t0 + pd.Timedelta(seconds=8))
+    (tmp_path / "pcardio").mkdir()
+    (tmp_path / "telefoon").mkdir()
+    data, annotaties = tmp_path / "pcardio" / "x_volledig.csv", tmp_path / "telefoon" / "x_annotaties.csv"
+    gecombineerd(bron, signalen).to_csv(data, index=False)
+    bron.annotaties_df().to_csv(annotaties, index=False)
+
+    k = v.koppelen
+    k._leegmaken()
+    k._lees([data])  # eerst de data van de recorder (andere map)...
+    k._lees([annotaties])  # ...dan de CSV van de telefoon: komt erbij, vervangt niet
+    k._lees([annotaties])  # dubbel kiezen telt één keer
+    assert set(k.ingelezen.soorten.values()) == {"export", "annotaties"} and not k.ingelezen.fouten
+    k._leegmaken()
+    assert k.ingelezen is None and k._paden == []

@@ -75,6 +75,7 @@ class KoppelenScherm(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.ingelezen: Ingelezen | None = None
+        self._paden: list[Path] = []  # alle gekozen bestanden; elke keer kiezen voegt toe (ook uit andere mappen)
         inhoud = QWidget()
         v = QVBoxLayout(inhoud)
         v.addWidget(self._inlezen_groep())
@@ -93,7 +94,8 @@ class KoppelenScherm(QWidget):
         v.addWidget(QLabel("P-Cardio-bestanden (data_*.txt of CSV), een eerdere export (…_volledig.csv) en/of een "
                            "annotatiebestand (van de telefoon-app of een export), los of in een .zip."))
         rij = QHBoxLayout()
-        for tekst, actie in (("Bestanden kiezen…", self._kies_bestanden), ("Map kiezen…", self._kies_map)):
+        for tekst, actie in (("Bestanden toevoegen…", self._kies_bestanden), ("Map toevoegen…", self._kies_map),
+                             ("Lijst leegmaken", self._leegmaken)):
             k = QPushButton(tekst)
             k.clicked.connect(actie)
             rij.addWidget(k)
@@ -207,10 +209,15 @@ class KoppelenScherm(QWidget):
     # --- 1. inlezen ---
 
     def _kies_bestanden(self) -> None:
-        paden, _ = QFileDialog.getOpenFileNames(self, "P-Cardio-bestanden kiezen", "",
+        paden, _ = QFileDialog.getOpenFileNames(self, "Bestanden toevoegen (meerdere: Ctrl+klik)", "",
                                                 "Data (*.txt *.csv *.zip);;Alle bestanden (*)")
         if paden:
             self._lees([Path(p) for p in paden])
+
+    def _leegmaken(self) -> None:
+        shutil.rmtree(UITPAK_MAP, ignore_errors=True)
+        self.ingelezen, self._paden = None, []
+        self._toon_ingelezen()
 
     def _kies_map(self) -> None:
         map = QFileDialog.getExistingDirectory(self, "Map met P-Cardio-bestanden")
@@ -223,8 +230,12 @@ class KoppelenScherm(QWidget):
 
     @bezig
     def _lees(self, paden: list[Path]) -> None:
+        """Nieuwe bestanden bij de al gekozen bestanden zetten en alles opnieuw inlezen: zo kan de .txt van de
+        P-Cardio (D:) samen met de annotatie-CSV van de telefoon (Downloads), ook al staan ze in andere mappen."""
+        bekend = {p.resolve() for p in self._paden}
+        self._paden += [p for p in paden if p.resolve() not in bekend]
         shutil.rmtree(UITPAK_MAP, ignore_errors=True)
-        self.ingelezen = lees_in(paden, UITPAK_MAP)
+        self.ingelezen = lees_in(self._paden, UITPAK_MAP)
         self._toon_ingelezen()
 
     def _toon_ingelezen(self) -> None:
@@ -361,7 +372,7 @@ class KoppelenScherm(QWidget):
             fout(self, str(e))
             return
         shutil.rmtree(UITPAK_MAP, ignore_errors=True)
-        self.ingelezen = None
+        self.ingelezen, self._paden = None, []
         self.ververs()
         self.klok_opname.setCurrentIndex(max(self.klok_opname.findData(str(doel.map)), 0))
         self.meldingen.setText(f"<b>Gekoppeld aan {doel.info.id}.</b> Controleer hieronder de klokcorrectie.")
@@ -378,6 +389,7 @@ class KoppelenScherm(QWidget):
         self.uur.hide()
         self.k_uur.hide()
         self.sync_plot.clear()
+        self.sync_plot.hide()  # pas tonen na Zoek sync-sprongen: leeg is hij alleen verwarrend
         self.sync_tekst.clear()
         if o is None:
             self.klok_huidig.setText("Nog geen opname met data.")
@@ -402,6 +414,7 @@ class KoppelenScherm(QWidget):
             return
         acc, zoek_s = signalen["acc"], self.zoek_s.value()
         self.sync_plot.clear()
+        self.sync_plot.show()
         regels, duidelijk = [], []
         for sync, r in zip(o.syncs, zoek_syncs(acc.data, [s.t_start for s in o.syncs], zoek_s)):
             if r is None:
