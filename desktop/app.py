@@ -221,6 +221,9 @@ def _open_gedeeld() -> bool:
 def main() -> None:
     sys.excepthook = _toon_fout
     app = QApplication(sys.argv)
+    # Altijd licht: STIJL en de grafieken (pyqtgraph, background="w") gaan uit van licht. Met Windows in donkere
+    # modus nam Qt anders donkere kleuren over: witte tekst op de lichte zijbalk en donkere tabellen naast witte plots.
+    app.styleHints().setColorScheme(Qt.ColorScheme.Light)
     app.setApplicationName("ECG-tool P-Cardio")
     app.setStyleSheet(STIJL)
     if GEDEELDE_MAP and not _open_gedeeld():
