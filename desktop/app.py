@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from gedeeld import GEDEELDE_MAP, HANDLEIDING, LOKALE_DB, PRIMAIR, bewaar_instellingen, bezig, \
+from gedeeld import GEDEELDE_MAP, HANDLEIDING, LOKALE_DB, PRIMAIR, TEKST, bewaar_instellingen, bezig, \
     lees_instellingen, zeker  # zet ook kern/ op het pad
 from analyse import BekijkenScherm, KoppelenScherm
 from beheer import DeelnemersScherm, OpnamesScherm
@@ -31,7 +31,7 @@ from live import LiveScherm
 LOGO = Path(__file__).resolve().parent / "assets" / "logo.png"
 PUBLICEER_MS = 10 * 60 * 1000  # gedeelde datamap: elke 10 minuten de werkkopie naar OneDrive
 STIJL = f"""
-QListWidget {{ background: #F2FAFC; border: none; font-size: 11pt; padding-top: 8px; }}
+QListWidget {{ background: #F2FAFC; color: {TEKST}; border: none; font-size: 11pt; padding-top: 8px; }}
 QListWidget::item {{ padding: 10px 14px; }}
 QListWidget::item:selected {{ background: {PRIMAIR}; color: white; }}
 QGroupBox {{ font-weight: bold; color: {PRIMAIR}; }}
