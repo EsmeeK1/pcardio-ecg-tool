@@ -248,7 +248,7 @@ HEADER = struct.Struct("<IIBHH")  # tijd, ticks, status, payloadgrootte, checksu
 PAKKETTEN_PER_SECONDE = 5
 TICKS_PER_SECONDE = 32768
 
-# De meetconfiguratie uit het opnameprotocol (zie paginas/live.py). Wordt alleen geschreven na bevestiging.
+# De meetconfiguratie uit het opnameprotocol (zie desktop/live.py). Wordt alleen geschreven na bevestiging.
 STANDAARD_CONFIG = [
     SensorConfig(3, 4, 4, 3),  # ECG 2-kanaals, gain x6, 250 Hz
     SensorConfig(5, 1, 6, 4),  # accelerometer x2, 100 Hz

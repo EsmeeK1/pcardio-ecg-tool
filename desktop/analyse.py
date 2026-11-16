@@ -11,14 +11,15 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
 from beheer import gekozen, tabel, vul
-from gedeeld import DONKER, GRAFIEK, ORANJE, PALET, PRIMAIR, SUBTIEL, TEKST, OpnameVelden, bezig, epoch, fout, hulp, \
-    klok, opname_label, tips, zeker
-from kern.beweging import beweging_per_segment
+from gedeeld import DONKER, GRAFIEK, ORANJE, PALET, PRIMAIR, SUBTIEL, TEKST, OpnameVelden, bevestiging_van, bezig, \
+    epoch, fout, hulp, klok, opname_label, tips, zeker
+from kern.beweging import SEGMENT_S, beweging_per_segment
+from kern.kwaliteit import KWALITEIT_KLEUREN, kenmerken_opname, kwaliteit_per_segment, per_label
 from kern.koppelen import SOORT_LABEL, Ingelezen, bestanden_in_map, binnen_data, lees_in, voorstellen
 from kern.lijsten import lees_lijst
 from kern.opslag import BEOORDELINGEN, DATA_ROOT, Deelnemers, Opname
@@ -31,6 +32,31 @@ IN_BEELD = QBrush(QColor("#FFE6C7"))  # rij van een annotatie die in het venster
 BEGIN_S, VENSTER_S = 5.0, 10.0  # beginweergave in Bekijken
 UC1_KLEUREN = {"rust": "#9FDCEB", "beweging": ORANJE, "lopen": "#8A4B00", "rechtop": "#6EC6DA", "liggend": DONKER,
                "onbekend": "#D9D9D9"}
+
+
+def uc_segmenten(opname: Opname, signalen: dict, bevestiging: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """UC-1 (beweging) en UC-2 (kwaliteit, None zonder Ecg1 en Ecg2) per segment van 20 s. De UC-2-kenmerken komen
+    uit de cache in de opnamemap; alleen de eerste keer wordt er gerekend (± 1 min voor een opname van 2 dagen)."""
+    acc, gyro, ecg = signalen["acc"], signalen.get("gyro"), signalen.get("ecg")
+    s = beweging_per_segment(acc.data, gyro.data if gyro else None, acc.fs, bevestiging)
+    if s.empty or ecg is None or not {"Ecg1", "Ecg2"} <= set(ecg.kanalen):
+        return s, None
+    return s, kwaliteit_per_segment(kenmerken_opname(opname.signalen_map, signalen, s["start"]), s)
+
+
+def aaneengesloten(x0: np.ndarray, waarden: np.ndarray, t: float) -> tuple[float, float] | None:
+    """Begin en eind (epoch-s) van de aaneengesloten segmenten met dezelfde waarde als het segment op ``t``. Een gat
+    tussen segmenten (bijv. geen ECG) breekt de reeks. Buiten de segmenten: None."""
+    i = int(np.searchsorted(x0, t, side="right")) - 1
+    if i < 0 or t >= x0[i] + SEGMENT_S:
+        return None
+    vast = lambda j, k: waarden[j] == waarden[k] and abs(x0[k] - x0[j] - SEGMENT_S) < 0.01  # noqa: E731
+    a, b = i, i
+    while a > 0 and vast(a - 1, a):
+        a -= 1
+    while b < len(x0) - 1 and vast(b, b + 1):
+        b += 1
+    return float(x0[a]), float(x0[b] + SEGMENT_S)
 
 
 def robuust_bereik(y: np.ndarray, max_punten: int = 200_000) -> tuple[float, float]:
@@ -493,6 +519,7 @@ class BekijkenScherm(QWidget):
         self._overzicht_items: list = []  # annotaties in het overzicht, om opnieuw te kunnen tekenen
         self._getekend: list = []  # y-waarden van de getekende ECG-lijnen, voor de robuuste y-as
         self._segmenten = None  # UC-1-segmenten (x0, tabel), voor de hover
+        self._kwaliteit = None  # UC-2-segmenten (x0, tabel), voor de hover
         self._ecg, self._bereik = None, (0.0, 1.0)
         self._tijden, self._in_beeld = [], None  # per rij (begin, eind) in epoch-s; rijen die nu in beeld zijn
 
@@ -534,10 +561,10 @@ class BekijkenScherm(QWidget):
         self.overzicht.setMaximumHeight(170)
         self.overzicht.setMouseEnabled(x=True, y=False)
         self.beweging_plot = self.grafiek.addPlot(row=1, col=0, axisItems={"bottom": pg.DateAxisItem()})
-        self.beweging_plot.setMaximumHeight(70)
+        self.beweging_plot.setMaximumHeight(95)
         self.beweging_plot.setXLink(self.overzicht)
         self.beweging_plot.setMouseEnabled(x=True, y=False)
-        self.beweging_plot.getAxis("left").setTicks([[(0.5, "houding"), (1.5, "activiteit")]])
+        self.beweging_plot.getAxis("left").setTicks([[(0.5, "houding"), (1.5, "activiteit"), (2.5, "kwaliteit")]])
         self.detail = self.grafiek.addPlot(row=2, col=0, axisItems={"bottom": pg.DateAxisItem()})
         self.detail.setMouseEnabled(x=True, y=False)
         self.detail.showGrid(x=True, y=True, alpha=0.2)
@@ -567,12 +594,19 @@ class BekijkenScherm(QWidget):
         kleur = lambda c, t: f"<span style='background:{c}'>&nbsp;&nbsp;&nbsp;</span> {t}"  # noqa: E731
         self.uc1_legenda = QLabel("UC-1 · activiteit: " + " ".join(kleur(UC1_KLEUREN[k], k) for k in (
             "rust", "beweging", "lopen", "onbekend")) + " · houding: " + " ".join(
-            kleur(UC1_KLEUREN[k], k) for k in ("rechtop", "liggend", "onbekend")))
+            kleur(UC1_KLEUREN[k], k) for k in ("rechtop", "liggend", "onbekend")) + " · UC-2 kwaliteit: " + " ".join(
+            kleur(c, k) for k, c in KWALITEIT_KLEUREN.items()) + " (startwaarden, nog niet getoetst)")
+        overeenstemming = QPushButton("Overeenstemming…")
+        overeenstemming.setToolTip("Per periodelabel: hoeveel segmenten van 20 s goed, matig of onbruikbaar zijn, en "
+                                   "welke plakker is aangewezen. Voor deze opname en voor alle opnames.")
+        overeenstemming.clicked.connect(lambda: self._overeenstemming())
+        balk.insertWidget(balk.count() - 1, overeenstemming)
         tips((self.filter, hulp.FILTER), (self.toon_acc, hulp.ACC), (self.toon_gyro, hulp.GYRO),
              (self.uc1_legenda, hulp.BEWEGING))
         self.hover = QLabel(" ")
         self.hover.setStyleSheet(f"color:{SUBTIEL}")
         self.grafiek.scene().sigMouseMoved.connect(self._hover)
+        self.grafiek.scene().sigMouseClicked.connect(self._dubbelklik)
         for toets, actie in (("Ctrl+R", self._beginweergave), ("Shift+Left", lambda: self._verschuif(-1)),
                              ("Shift+Right", lambda: self._verschuif(1))):
             QShortcut(QKeySequence(toets), self, actie)
@@ -716,10 +750,10 @@ class BekijkenScherm(QWidget):
         self._geladen = map
         self.opname = Opname.laad(map) if map else None
         self.signalen = self.opname.laad_signalen() if self.opname else {}
-        self._ecg, self._gefilterd, self._segmenten = None, {}, None
+        self._ecg, self._gefilterd, self._segmenten, self._kwaliteit = None, {}, None, None
         if self.opname is not None:
             self.bevestiging.blockSignals(True)
-            self.bevestiging.setCurrentText("lanyard" if "lanyard" in self.opname.info.elektroden.lower() else "sticker")
+            self.bevestiging.setCurrentText(bevestiging_van(self.opname))
             self.bevestiging.blockSignals(False)
         self.overzicht.clear()
         self._overzicht_items = []
@@ -835,8 +869,7 @@ class BekijkenScherm(QWidget):
         self.beweging_plot.clear()
         if "acc" not in self.signalen:
             return
-        acc, gyro = self.signalen["acc"], self.signalen.get("gyro")
-        s = beweging_per_segment(acc.data, gyro.data if gyro else None, acc.fs, self.bevestiging.currentText())
+        s, q = bezig(uc_segmenten)(self.opname, self.signalen, self.bevestiging.currentText())
         if s.empty:
             return
         x0, breedte = epoch(s["start"]), (s["eind"] - s["start"]).dt.total_seconds().to_numpy()
@@ -846,7 +879,13 @@ class BekijkenScherm(QWidget):
                 x0=x0, width=breedte, y0=y0, height=0.9, pen=pg.mkPen(None),
                 brushes=[pg.mkBrush(UC1_KLEUREN[w]) for w in s[kolom]],
             ))
-        self.beweging_plot.setYRange(0, 2, padding=0)
+        if q is not None and len(q):
+            self._kwaliteit = (epoch(q["start"]), q)
+            self.beweging_plot.addItem(pg.BarGraphItem(
+                x0=self._kwaliteit[0], width=SEGMENT_S, y0=2.05, height=0.9, pen=pg.mkPen(None),
+                brushes=[pg.mkBrush(KWALITEIT_KLEUREN[w]) for w in q["kwaliteit"]],
+            ))
+        self.beweging_plot.setYRange(0, 3, padding=0)
 
     def _hover(self, positie) -> None:
         """Onder de plot: tijd, en boven de UC-1-balk ook activiteit, houding en de kenmerken van dat segment."""
@@ -864,7 +903,49 @@ class BekijkenScherm(QWidget):
                 r = s.iloc[i]
                 tekst += (f" · <b>activiteit: {r['activiteit']}</b> · <b>houding: {r['houding']}</b> · "
                           f"sd |acc| {r['acc_sd']:.3f} g · kanteling {r['kanteling']:.0f}°")
+        if self._kwaliteit is not None and plot is self.beweging_plot:
+            x0, q = self._kwaliteit
+            i = int(np.searchsorted(x0, t, side="right")) - 1
+            if 0 <= i < len(q) and t < x0[i] + SEGMENT_S:
+                r = q.iloc[i]
+                oorzaak = f" · {r['oorzaak']}" if r["oorzaak"] else ""
+                plakker = f" · plakker {r['plakker']}" if r["plakker"] not in ("geen", "") else ""
+                leads = " · ".join(f"{k}: goed {r[f'goed_{k}']:.2f}, drift {r[f'drift_db_{k}']:+.0f} dB, "
+                                   f"ruis {r[f'ruis_db_{k}']:+.0f} dB" for k in ("I", "II", "III"))
+                tekst += (f"<br><b>kwaliteit: {r['kwaliteit']}{oorzaak}{plakker}</b> · lead-off "
+                          f"{'ja' if r['lead_off'] else 'nee'} · rand {r['rand']:.0%} · {leads}")
         self.hover.setText(tekst)
+
+    @bezig
+    def _overeenstemming(self) -> None:
+        """Per periodelabel de automatische kwaliteit: voor deze opname en voor alle opnames met Ecg1, Ecg2 en acc."""
+        def tabel_van(opname: Opname, signalen: dict) -> pd.DataFrame:
+            _, q = uc_segmenten(opname, signalen, bevestiging_van(opname))
+            perioden = [(a.label, *opname.in_datatijd(a)) for a in opname.annotaties if a.soort == "periode"]
+            return pd.DataFrame() if q is None else per_label(q, [p for p in perioden if p[2] is not None])
+
+        deze = tabel_van(self.opname, self.signalen) if self.opname and "acc" in self.signalen else pd.DataFrame()
+        alle = []
+        for o in Opname.alle(DATA_ROOT):
+            if o.heeft_signalen:
+                signalen = o.laad_signalen()
+                if "acc" in signalen:
+                    alle.append(tabel_van(o, signalen))
+        totaal = pd.concat(alle).groupby(level=0).sum() if any(len(t) for t in alle) else pd.DataFrame()
+
+        dialoog = QDialog(self)
+        dialoog.setWindowTitle("Overeenstemming UC-2")
+        dialoog.resize(900, 650)
+        v = QVBoxLayout(dialoog)
+        v.addWidget(QLabel("Aantal segmenten van 20 s per periodelabel. Een segment telt mee als het helemaal binnen "
+                           "de periode valt. Drempels zijn startwaarden; dit overzicht is de basis om ze te kiezen."))
+        for titel, df in (("Deze opname", deze), ("Alle opnames", totaal)):
+            v.addWidget(QLabel(f"<b>{titel}</b>"))
+            df = df.fillna(0).astype(int)
+            t = tabel(["Label", *df.columns])
+            vul(t, [[label, *rij] for label, rij in zip(df.index, df.to_numpy().tolist())], list(df.index))
+            v.addWidget(t)
+        dialoog.exec()
 
     def _teken_annotaties(self) -> None:
         o = self.opname
@@ -913,7 +994,8 @@ class BekijkenScherm(QWidget):
     def _markeer_in_beeld(self, x0: float, x1: float) -> None:
         """Rijen van annotaties die in het venster vallen lichtoranje (de kleur van het venster), en de tabel naar de
         eerste daarvan scrollen. Alleen als de set verandert: slepen blijft zo vlot."""
-        in_beeld = {r for r, (a, b) in enumerate(self._tijden) if a <= x1 and b >= x0}
+        # strikt: een buurperiode die precies aan de rand van het venster eindigt of begint, telt niet mee
+        in_beeld = {r for r, (a, b) in enumerate(self._tijden) if a < x1 and b > x0 or x0 <= a == b <= x1}
         if in_beeld == self._in_beeld:
             return
         self._in_beeld = in_beeld
@@ -931,6 +1013,27 @@ class BekijkenScherm(QWidget):
         t0, t1 = pd.Timestamp(a, unit="s", tz="UTC"), pd.Timestamp(b, unit="s", tz="UTC")
         wat = "Gekozen annotatie" if self.gekozen_id is not None else "Selectie"
         self.selectie_tekst.setText(f"<b>{wat}:</b> {klok(t0, True)} – {klok(t1, True)} ({b - a:.1f} s)")
+
+    def _dubbelklik(self, ev) -> None:
+        """Dubbelklik op een blok in de balk (houding, activiteit of kwaliteit): de selectie op de aaneengesloten
+        blokken met hetzelfde label, en het detail erop ingezoomd."""
+        if not ev.double() or not self.beweging_plot.sceneBoundingRect().contains(ev.scenePos()):
+            return
+        p = self.beweging_plot.getViewBox().mapSceneToView(ev.scenePos())
+        kolom, segmenten = {0: ("houding", self._segmenten), 1: ("activiteit", self._segmenten),
+                            2: ("kwaliteit", self._kwaliteit)}.get(int(p.y()), (None, None))
+        if segmenten is None:
+            return
+        x0, s = segmenten
+        bereik = aaneengesloten(x0, s[kolom].to_numpy(), p.x())
+        if bereik is None:
+            return
+        ev.accept()
+        s0, s1 = bereik
+        self._deselecteer()
+        self.venster.setRegion((s0, s1))
+        self.selectie.setRegion((s0, s1))
+        self._toon_selectie()
 
     def _selectie_tijden(self) -> tuple[pd.Timestamp, pd.Timestamp]:
         a, b = self.selectie.getRegion()
@@ -958,7 +1061,7 @@ class BekijkenScherm(QWidget):
         a = self.opname.zoek(id)
         start, eind = self.opname.in_datatijd(a)
         s0, s1 = epoch(start), epoch(eind if eind is not None else start)
-        marge = max(5.0, 0.2 * (s1 - s0))
+        marge = 5.0 if s1 == s0 else 0.0  # een periode precies in beeld, zonder de buren; een moment ± 5 s
         self.venster.setRegion((s0 - marge, s1 + marge))
         self.selectie.setRegion((s0, s1))
         self.label.setCurrentText(a.label)

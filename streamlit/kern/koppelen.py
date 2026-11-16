@@ -1,4 +1,4 @@
-"""Bestanden inlezen en koppelen aan een opname: zonder UI, gedeeld door de Streamlit- en de desktop-app."""
+"""Bestanden inlezen en koppelen aan een opname: zonder UI."""
 
 from __future__ import annotations
 

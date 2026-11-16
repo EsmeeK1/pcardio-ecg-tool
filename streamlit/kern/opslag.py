@@ -152,7 +152,7 @@ def _maak_db(root: Path) -> None:
             con.execute(f"PRAGMA user_version = {SCHEMA_VERSIE}")
             with con:
                 _migreer_bestanden(con, root)
-        if not db_pad(root).exists():  # een ander proces (Streamlit naast de desktop-app) kan net eerder zijn
+        if not db_pad(root).exists():  # een ander proces (een tweede instantie van de app) kan net eerder zijn
             os.replace(tmp, db_pad(root))
     finally:
         tmp.unlink(missing_ok=True)
@@ -728,6 +728,8 @@ class Opname:
         for naam, signaal in self.laad_signalen().items():
             signaal.data["tijd"] = signaal.data["tijd"] + verschil
             signaal.data.to_parquet(self.signalen_map / f"{naam}.parquet", index=False)
+        for cache in self.signalen_map.glob("kwaliteit-v*.parquet"):  # UC-2-kenmerken hangen aan de oude tijden
+            cache.unlink()
         for a in self.annotaties:
             if a.tijdbasis == "data":
                 a.t_start += verschil

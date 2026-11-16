@@ -16,7 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 from beheer import tabel
-from gedeeld import DONKER, GRAFIEK, ORANJE, PRIMAIR, SUBTIEL, TEKST, OpnameVelden, fout, hulp, klok, opname_label, tips, zeker
+from gedeeld import (
+    DONKER, GRAFIEK, ORANJE, PRIMAIR, SUBTIEL, TEKST, OpnameVelden, bevestiging_van, fout, hulp, klok, opname_label, tips,
+    zeker,
+)
 from kern import pcardio_protocol as p
 from kern.beweging import (
     HOUDING_LIVE_S, HOUDING_STAP_S, LIVE_STAP_S, OMGEKEERD_GRADEN, SEGMENT_S, beweging_nu, houding_nu,
@@ -495,7 +498,7 @@ class LiveScherm(QWidget):
         self.map = map
         o = Opname.laad(map)
         self.plaatsing.setText(o.laatste_plaatsing)
-        self.bevestiging.setCurrentText("lanyard" if "lanyard" in o.info.elektroden.lower() else "sticker")
+        self.bevestiging.setCurrentText(bevestiging_van(o))
         self._toon_opname()
 
     def _opname(self) -> Opname | None:

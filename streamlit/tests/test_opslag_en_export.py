@@ -11,8 +11,7 @@ import pytest
 from kern.export import bestandssoort, gecombineerd, lees_export
 from kern.opslag import Deelnemers, Opname, lees_annotaties, nu
 from kern.pcardio import Signaal
-from kern.plots import DetailOpties, detail, selectie_tijden
-from kern.verwerking import dun_uit, ecg_filter, overlap_fractie, zes_leads, zoek_sync
+from kern.verwerking import ecg_filter, overlap_fractie, zes_leads, zoek_sync
 
 
 def _deelnemer(root: Path):
@@ -221,24 +220,6 @@ def test_zes_leads_einthoven() -> None:
     np.testing.assert_allclose(leads["aVR"] + leads["aVL"] + leads["aVF"], 0)
 
 
-def test_dun_uit_bewaart_pieken() -> None:
-    tijd = pd.Series(pd.date_range("2026-01-01", periods=100_000, freq="4ms", tz="UTC"))
-    waarden = np.zeros(100_000)
-    waarden[54_321] = 9.0
-    t, w = dun_uit(tijd, waarden, max_punten=1000)
-    assert len(w) <= 1000 and w.max() == 9.0
-    assert t.iloc[w.argmax()] == tijd.iloc[54_321] and t.dtype == tijd.dtype
-
-
-def test_dun_uit_houdt_het_einde() -> None:
-    """10 s op 1000 Hz uitgedund naar 8000 punten liet eerder alleen de eerste 8 s zien."""
-    tijd = pd.Series(pd.date_range("2026-01-01", periods=10_000, freq="1ms", tz="UTC"))
-    t, w = dun_uit(tijd, np.arange(10_000, dtype=float), max_punten=8000)
-    assert len(w) <= 8000
-    assert t.iloc[0] == tijd.iloc[0] and t.iloc[-1] == tijd.iloc[-1]
-    assert w.min() == 0 and w.max() == 9_999
-
-
 def test_overlap() -> None:
     t = pd.Timestamp("2026-01-01", tz="UTC")
     s = pd.Timedelta(seconds=1)
@@ -265,42 +246,14 @@ def test_ecg_filter_haalt_drift_en_ruis_weg() -> None:
     assert ecg_filter(np.array([1.0, 2.0, 3.0]), fs).tolist() == [-1.0, 0.0, 1.0]  # te kort: alleen offset eraf
 
 
-def test_filter_alleen_in_de_plot(tmp_path: Path) -> None:
+def test_export_blijft_ruw(tmp_path: Path) -> None:
+    """Het filter is alleen voor de weergave: export en opgeslagen signalen blijven ruw."""
     t0 = pd.Timestamp("2026-10-05 08:00:00", tz="UTC")
     signalen = _signalen(t0)
-    signalen["ecg"].data["Ecg1"] += 5.0  # offset die het filter in de plot weghaalt
-    voor = {n: s.data.copy() for n, s in signalen.items()}
-    opname = Opname.nieuw(_deelnemer(tmp_path), t0, root=tmp_path)
-
-    fig = detail(signalen, opname, t0 + pd.Timedelta(seconds=5), t0 + pd.Timedelta(seconds=15), DetailOpties(filter=True))
-    getoond = np.concatenate([np.asarray(tr.y, dtype=float) for tr in fig.data if tr.name == "I"])
-    assert abs(np.nanmean(getoond)) < 1.0  # in de plot is de offset weg
-
-    for naam, data in voor.items():
-        pd.testing.assert_frame_equal(signalen[naam].data, data)  # opgeslagen signalen onveranderd
-    df = gecombineerd(opname, signalen)
-    np.testing.assert_array_equal(df["Ecg1"].to_numpy(), voor["ecg"]["Ecg1"].to_numpy())  # export ruw
-
-
-def test_label_in_hover(tmp_path: Path) -> None:
-    t0 = pd.Timestamp("2026-10-05 08:00:00", tz="UTC")
-    opname = Opname.nieuw(_deelnemer(tmp_path), t0, root=tmp_path)
-    opname.voeg_toe("periode", "Zitten", t0 + pd.Timedelta(seconds=6), t0 + pd.Timedelta(seconds=8), tijdbasis="data")
-    opname.voeg_toe("moment", "Hoest", t0 + pd.Timedelta(seconds=7), tijdbasis="data")
-    fig = detail(_signalen(t0), opname, t0 + pd.Timedelta(seconds=5), t0 + pd.Timedelta(seconds=15), DetailOpties())
-
-    label = next(tr for tr in fig.data if tr.name == "label")
-    assert set(label.text) == {"Zitten", "Zitten, Hoest"} and list(label.text).count("Zitten, Hoest") == 1
-    assert len(label.x) == 2 * 250 + 1  # alleen punten binnen de periode (2 s op 250 Hz, randen inbegrepen)
-
-
-def test_selectie_tijden() -> None:
-    selectie = {"box": [{"xref": "x", "yref": "y", "x": ["2026-10-05 10:00:12.5", "2026-10-05 10:00:03.25"]}]}
-    begin, eind = selectie_tijden(selectie)
-    assert begin == pd.Timestamp("2026-10-05 08:00:03.25", tz="UTC")  # zomertijd: UTC+2
-    assert eind == pd.Timestamp("2026-10-05 08:00:12.5", tz="UTC")
-    assert selectie_tijden({"box": [], "points": []}) is None
-    assert selectie_tijden(None) is None
+    signalen["ecg"].data["Ecg1"] += 5.0
+    voor = signalen["ecg"].data["Ecg1"].to_numpy().copy()
+    df = gecombineerd(Opname.nieuw(_deelnemer(tmp_path), t0, root=tmp_path), signalen)
+    np.testing.assert_array_equal(df["Ecg1"].to_numpy(), voor)
 
 
 def test_mislukte_migratie_laat_geen_lege_database_achter(tmp_path: Path, monkeypatch) -> None:

@@ -1,4 +1,4 @@
-"""ECG-tool P-Cardio als desktop-app (PySide6 + pyqtgraph). Zelfde kern en dezelfde data als de Streamlit-app.
+"""ECG-tool P-Cardio als desktop-app (PySide6 + pyqtgraph). Logica zonder UI staat in streamlit/kern/
 
 Starten vanuit de projectroot:
     .venv\\Scripts\\python desktop\\app.py
@@ -12,6 +12,7 @@ import sys
 import traceback
 from pathlib import Path
 
+import dateutil.rrule  # noqa: F401 - idem, via neurokit2 → matplotlib (UC-2)
 import pandas  # noqa: F401 - vóór PySide6 laden: anders struikelt shiboken 6.12 over `six` (via dateutil)
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QPixmap, QShortcut

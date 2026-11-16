@@ -1,12 +1,9 @@
 # pcardio-ecg-tool
 
 App van AppBakkers voor P-Cardio-opnames: deelnemers en opnames beheren, live annoteren, live ECG/acc/gyro via de
-dongle, P-Cardio-data koppelen, bekijken & annoteren en exporteren. Er zijn twee versies op dezelfde data:
-
-- **Desktop-app** (`desktop/`, PySide6 + pyqtgraph): live plots zonder geflikker, knoppen reageren direct.
-  Dubbelklik **`ECG-tool.cmd`**.
-- **Streamlit-app** (`streamlit/`): dezelfde functies in de browser. Uitleg over de app en de code staat in
-  [streamlit/README.md](streamlit/README.md).
+dongle, P-Cardio-data koppelen, bekijken & annoteren (met UC-1 beweging en UC-2 signaalkwaliteit) en exporteren.
+Desktop-app (`desktop/`, PySide6 + pyqtgraph): dubbelklik **`ECG-tool.cmd`**. Uitleg over de code staat in
+[streamlit/README.md](streamlit/README.md).
 
 **Data:** `streamlit/data/ecg.db` (SQLite: deelnemers, opnames, annotaties) en per opname een map met de ruwe
 bestanden, signalen (parquet) en exports. Het oudere formaat (`deelnemers.csv`, `opname.json`, `annotaties.csv`)
@@ -19,24 +16,14 @@ script maakt `.venv` aan met Python 3.12 en installeert `requirements.txt`.
 
 ## Starten
 
-**Desktop-app:** dubbelklik `ECG-tool.cmd`, of `.venv\Scripts\python desktop\app.py`.
-
-**Streamlit-app:** altijd vanuit de projectroot, anders wordt `.streamlit/config.toml` niet geladen:
-
-```powershell
-.venv\Scripts\Activate.ps1
-streamlit run streamlit\app.py
-```
-
-Krijg je `UnauthorizedAccess` bij het activeren? Voer eenmalig uit:
-`Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
+Dubbelklik `ECG-tool.cmd`, of `.venv\Scripts\python desktop\app.py`.
 
 ## Mappen
 
 | Map | Inhoud |
 |---|---|
 | `desktop/` | desktop-app: `app.py` (hoofdvenster), `beheer.py`, `live.py`, `analyse.py` |
-| `streamlit/` | Streamlit-app: pagina's, `kern/` (logica zonder UI, ook gebruikt door de desktop-app), tests |
+| `streamlit/` | `kern/` (logica zonder UI), helpteksten, configuratie en tests (de naam is historisch) |
 | `scripts/probe_device.py` | losse hardwaretest van dongle en recorder, buiten de app om |
 | `docs/` | [opnameprotocol](docs/opnameprotocol-p-cardio.md) en handleidingen van de P-Cardio |
 | `mobiel/` | web-app voor de telefoon: annoteren zonder pc, bijv. in de sportschool (zie hieronder) |
@@ -59,8 +46,7 @@ De tijden komen van de telefoonklok (`tijdbasis` = `pc`), dus doe een sync-spron
 `mobiel/live.html` toont live ECG, acc en gyro via de Bluetooth van de telefoon, zonder dongle (alleen kijken). Safari
 kan geen Bluetooth: open de pagina op de iPhone in de gratis app **Bluefy**. Op Android en de pc werkt Chrome/Edge.
 
-`streamlit/data/` bevat deelnemers- en opnamegegevens en staat in `.gitignore`. Uitzondering: de oefendata
-in `streamlit/data/test/` gaat wel mee, zodat je meteen een oefenopname kunt maken.
+`streamlit/data/` bevat deelnemers- en opnamegegevens en staat in `.gitignore`.
 
 ## Medische achtergrond: ECG in het kort
 

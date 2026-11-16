@@ -1,4 +1,4 @@
-"""Signaalbewerking: 6 leads, weergavefilter, uitdunnen voor plots, sync-sprong zoeken."""
+"""Signaalbewerking: 6 leads, weergavefilter, sync-sprong zoeken."""
 
 from __future__ import annotations
 
@@ -37,8 +37,6 @@ def zes_leads(ecg: pd.DataFrame) -> pd.DataFrame:
 
 # Weergavefilter: alleen voor de plots, nooit voor opgeslagen of geëxporteerde data.
 FILTER_HZ = (0.5, 40.0)
-# Extra data aan weerszijden van het venster, zodat het filter aan de vensterranden niet inzwaait.
-FILTER_MARGE_S = 2.0
 
 
 def ecg_filter(waarden: np.ndarray, fs: float) -> np.ndarray:
@@ -81,27 +79,6 @@ def knip(df: pd.DataFrame, t0: pd.Timestamp, t1: pd.Timestamp) -> pd.DataFrame:
     i0 = tijden.searchsorted(t0, side="left")
     i1 = tijden.searchsorted(t1, side="right")
     return df.iloc[i0:i1]
-
-
-def dun_uit(tijd: pd.Series, waarden: np.ndarray, max_punten: int = 4000) -> tuple[pd.Series, np.ndarray]:
-    """Min/max per bak, zodat pieken (artefacten!) zichtbaar blijven in een overzichtsplot."""
-    n = len(waarden)
-    if n <= max_punten:
-        return tijd, waarden
-    # Naar boven afronden en het laatste blok aanvullen met NaN, zodat het einde van het signaal niet wegvalt.
-    grootte = -(-n // (max_punten // 2))
-    bakken = -(-n // grootte)
-    aanvulling = bakken * grootte - n
-    blokken = np.concatenate([np.asarray(waarden, dtype=float), np.full(aanvulling, np.nan)]).reshape(bakken, grootte)
-    i_min = np.nanargmin(np.where(np.isnan(blokken), np.inf, blokken), axis=1)
-    i_max = np.nanargmax(np.where(np.isnan(blokken), -np.inf, blokken), axis=1)
-    eerst = np.minimum(i_min, i_max)
-    daarna = np.maximum(i_min, i_max)
-    rijen = np.arange(bakken)
-    idx_w = np.stack([blokken[rijen, eerst], blokken[rijen, daarna]], axis=1).reshape(-1)
-    # Tijden via de posities ophalen: tijd.to_numpy() maakt van een tijdzone-kolom een Python-object per sample (traag).
-    posities = np.minimum(np.stack([rijen * grootte + eerst, rijen * grootte + daarna], axis=1).reshape(-1), n - 1)
-    return tijd.iloc[posities].reset_index(drop=True), idx_w
 
 
 @dataclass

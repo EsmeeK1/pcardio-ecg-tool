@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import dateutil.rrule  # noqa: F401 - vóór PySide6: anders struikelt shiboken over `six` (zie desktop/app.py)
 import pandas as pd
 import pytest
 
@@ -170,6 +171,58 @@ def test_bekijken_wisselen_filters_sneltoetsen_hover(venster) -> None:
     app.processEvents()
     k._hover(k.beweging_plot.getViewBox().mapViewToScene(QPointF(x0 + 5, 1.5)))  # boven het eerste segment
     assert "activiteit:" in k.hover.text() and "houding:" in k.hover.text()
+    assert "kwaliteit:" in k.hover.text()  # UC-2-rij in dezelfde balk
+    assert list((a.signalen_map).glob("kwaliteit-v*.parquet"))  # kenmerken in de cache
+
+    class Dubbelklik:  # zoals pyqtgraph's MouseClickEvent
+        def __init__(self, pos) -> None:
+            self.pos = pos
+
+        def double(self) -> bool:
+            return True
+
+        def scenePos(self):  # noqa: N802 - Qt-naam
+            return self.pos
+
+        def accept(self) -> None:
+            pass
+
+    x_seg, s = k._segmenten
+    k._dubbelklik(Dubbelklik(k.beweging_plot.getViewBox().mapViewToScene(QPointF(x0 + 5, 1.5))))
+    begin, eind = k.selectie.getRegion()
+    assert begin == pytest.approx(x_seg[0]) and (eind - begin) % 20 == pytest.approx(0, abs=0.01)
+    assert k.venster.getRegion() == pytest.approx((begin, eind))  # detail toont precies die periode
+
+
+def test_aaneengesloten() -> None:
+    import numpy as np
+    from analyse import aaneengesloten
+
+    x0 = np.array([0.0, 20, 40, 60, 100, 120])  # gat tussen 60 en 100
+    waarden = np.array(["goed", "matig", "matig", "matig", "matig", "goed"])
+    assert aaneengesloten(x0, waarden, 45) == (20, 80)
+    assert aaneengesloten(x0, waarden, 105) == (100, 120)  # het gat breekt de reeks
+    assert aaneengesloten(x0, waarden, 5) == (0, 20)
+    assert aaneengesloten(x0, waarden, 85) is None and aaneengesloten(x0, waarden, -1) is None
+
+
+def test_bekijken_overeenstemming(venster, monkeypatch) -> None:
+    from PySide6.QtWidgets import QDialog, QTableWidget
+
+    app, v = venster
+    t0 = pd.Timestamp("2026-10-10 09:00", tz="UTC")
+    o = Opname.nieuw(Deelnemers(DATA_ROOT).toevoegen("Overeen", 1996, "vrouw", False), t0, root=DATA_ROOT)
+    o.bewaar_signalen(_signalen(t0, seconden=60), [])
+    o.voeg_toe("periode", "Zitten", t0, t_eind=t0 + pd.Timedelta(seconds=45))
+    v._open("bekijken", str(o.map))
+    tabellen = []
+    monkeypatch.setattr(QDialog, "exec", lambda d: tabellen.extend(d.findChildren(QTableWidget)))
+    v.bekijken._overeenstemming()
+    deze = tabellen[0]
+    assert deze.rowCount() == 1 and deze.item(0, 0).text() == "Zitten"
+    koppen = [deze.horizontalHeaderItem(i).text() for i in range(deze.columnCount())]
+    assert koppen[:4] == ["Label", "goed", "matig", "onbruikbaar"]
+    assert sum(int(deze.item(0, i).text()) for i in (1, 2, 3)) == 2  # beide segmenten vallen in de periode
 
 
 def test_deelnemers_scherm(venster) -> None:
@@ -248,6 +301,17 @@ def test_bekijken_markeert_rijen_in_beeld(venster) -> None:
     k.venster.setRegion((t0.timestamp() + 15, t0.timestamp() + 45))  # over beide heen
     app.processEvents()
     assert oranje(0) and oranje(1)
+
+    # Aanklikken in de tabel: precies die periode in beeld, ook als de buurperiode er direct op aansluit.
+    o = Opname.laad(o.map)
+    o.voeg_toe("periode", "Staan", t0 + pd.Timedelta(seconds=20), t0 + pd.Timedelta(seconds=40), tijdbasis="data")
+    k.na_wijziging()
+    rij = next(r for r in range(k.lijst.rowCount()) if k.lijst.item(r, 1).text() == "Staan")
+    k.lijst.selectRow(rij)
+    app.processEvents()
+    assert k.venster.getRegion() == pytest.approx((t0.timestamp() + 20, t0.timestamp() + 40))
+    assert k.selectie.getRegion() == pytest.approx((t0.timestamp() + 20, t0.timestamp() + 40))
+    assert [r for r in range(k.lijst.rowCount()) if oranje(r)] == [rij]
 
 
 def test_live_volgt_verplaatste_dongle(venster, monkeypatch) -> None:

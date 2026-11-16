@@ -61,7 +61,7 @@ if errorlevel 1 goto :error
 echo.
 echo [KLAAR] Python 3.12.x-omgeving en dependencies zijn gereed.
 echo [INFO] Activeer met: %VENV_DIR%\Scripts\activate
-echo [INFO] Start je app bijvoorbeeld met: python -m streamlit run streamlit/app.py
+echo [INFO] Start je app bijvoorbeeld met: ECG-tool.cmd (of python desktop/app.py)
 exit /b 0
 
 :error

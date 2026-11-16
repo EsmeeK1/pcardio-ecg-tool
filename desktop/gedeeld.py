@@ -87,8 +87,13 @@ def opname_label(opname: Opname, namen: dict[str, str]) -> str:
     return f"{gestart} · {namen.get(opname.info.deelnemer_id, opname.info.deelnemer_id)}{extra}"
 
 
+def bevestiging_van(opname: Opname) -> str:
+    """Bevestiging van de recorder voor UC-1 en UC-2: sticker of lanyard, uit de elektrodeplaatsing."""
+    return "lanyard" if "lanyard" in opname.info.elektroden.lower() else "sticker"
+
+
 def tips(*paren: tuple[QWidget, str]) -> None:
-    """Tooltips uit de helpteksten (``hulp.py``, gedeeld met de Streamlit-app); Markdown wordt eenvoudige opmaak."""
+    """Tooltips uit de helpteksten (``hulp.py``); Markdown wordt eenvoudige opmaak."""
     for widget, tekst in paren:
         html = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", tekst)
         html = re.sub(r"\*(.+?)\*", r"<i>\1</i>", html)
