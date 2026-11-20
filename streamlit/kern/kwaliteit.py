@@ -27,17 +27,18 @@ import numpy as np
 import pandas as pd
 from scipy.signal import butter, resample_poly, sosfiltfilt, welch
 
-from kern.beweging import SEGMENT_S
+from kern.beweging import MIN_DEKKING, SEGMENT_S
 
 FS = 250  # Hz; alles wordt hiernaartoe omgezet
 VOOR, NA = int(0.25 * FS), int(0.45 * FS)  # slag: 250 ms vóór tot 450 ms na de R-top
 LEADS = ("I", "II", "III")
-# Startwaarden, nog niet getoetst aan beoordelingen.
+# Getoetst op proxy-labels van 38 opnames (D001, D002; docs/journal/2026-11-20-uc2-afronden.md), nog niet aan
+# handmatige beoordelingen.
 DREMPELS = {
     "goede_slag": 0.9,  # correlatie met de mediaan-slag waarboven een slag goed is (AI-03)
-    "goed": 0.9,  # goed_min hierboven: goed
+    "goed": 0.8,  # goed_min hierboven: goed (was 0,9: 23% vals alarm in rust aan de lanyard, door lead I)
     "matig": 0.5,  # goed_min hierboven: matig, anders onbruikbaar
-    "drift_db": 15.0,  # drift boven dit (I of II): onbruikbaar; per lead: "slecht" voor het plakkerpatroon
+    "drift_db": 15.0,  # drift boven dit in I of II, mét slechte slagen in die lead: onbruikbaar; per lead: "slecht"
     "rand_mv": 350.0,  # |ruw| hierboven: rand van het meetbereik (aanname)
 }
 PLAKKER = {frozenset({"I", "II"}): "rood", frozenset({"I", "III"}): "geel", frozenset({"II", "III"}): "groen"}
@@ -104,7 +105,10 @@ def classificeer(k: dict, activiteit: str) -> dict[str, str]:
     if k["lead_off"] or k["rand"] > 0:
         return {"kwaliteit": "onbruikbaar", "oorzaak": "losse draad", "plakker": "geen"}
     goed_min = min(k["goed_I"], k["goed_II"])
-    if k["slagen"] == 0 or max(k["drift_db_I"], k["drift_db_II"]) > d["drift_db"]:
+    # Drift telt alleen als de slagen in die lead ook slecht zijn: lead I is klein (± 0,55 mV), daar komt drift in rust
+    # vaak net boven 15 dB terwijl de slagen 0,93–1,00 goed zijn (vals alarm). Een half losse plakker geeft beide.
+    drift = lambda lead: k[f"drift_db_{lead}"] > d["drift_db"] and k[f"goed_{lead}"] < d["goed"]  # noqa: E731
+    if k["slagen"] == 0 or drift("I") or drift("II"):
         kwaliteit = "onbruikbaar"
     elif goed_min >= d["goed"]:
         return {"kwaliteit": "goed", "oorzaak": "", "plakker": "geen"}
@@ -117,6 +121,16 @@ def classificeer(k: dict, activiteit: str) -> dict[str, str]:
     slecht = frozenset(lead for lead in LEADS if k[f"goed_{lead}"] < d["goed"] or k[f"drift_db_{lead}"] > d["drift_db"])
     return {"kwaliteit": kwaliteit, "oorzaak": "mogelijk slecht elektrodecontact",
             "plakker": PLAKKER.get(slecht, "onbekend")}
+
+
+def kwaliteit_nu(tijd: np.ndarray, ecg: np.ndarray, fs: float, lead_off: bool, activiteit: str) -> dict | None:
+    """Live: kenmerken en label van de laatste ``SEGMENT_S`` uit de ECG-ringbuffer (tijden, samples × [Ecg1, Ecg2]).
+    None zolang er minder dan ``MIN_DEKKING`` van een segment in zit (net gestart, gaten)."""
+    ok = ~np.isnan(tijd) & ~np.isnan(ecg).any(axis=1)
+    if ok.sum() < MIN_DEKKING * SEGMENT_S * fs:
+        return None
+    k = kenmerken_segment(ecg[ok, 0], ecg[ok, 1], lead_off, fs)
+    return k | classificeer(k, activiteit)
 
 
 def kenmerken_per_segment(ecg: pd.DataFrame, lead_off: pd.DataFrame | None, starts: pd.Series) -> pd.DataFrame:

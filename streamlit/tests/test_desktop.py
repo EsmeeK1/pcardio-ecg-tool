@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import dateutil.rrule  # noqa: F401 - vóór PySide6: anders struikelt shiboken over `six` (zie desktop/app.py)
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -79,6 +80,16 @@ def test_live_met_simulator(venster) -> None:
     _wacht(app, lambda: live.sessie.toestand == "verbonden")
     live._start()
     _wacht(app, lambda: live.lijnen_ecg[0].xData is not None and len(live.lijnen_ecg[0].xData) > 250)
+    assert "KWALITEIT" in live.badges.kwaliteit.text() and "Nog" in live.badges.kwaliteit.text()  # buffer nog niet vol
+
+    # UC-2 live: een volle buffer van 20 s met een schoon ECG geeft "Goed" (de simulator zou er 20 s over doen)
+    from test_kwaliteit import I as ECG_I, II as ECG_II
+
+    s = live.sessie
+    s.buffer.voeg_toe(float(np.nanmax(s.buffer.lees()[0])) + 20, np.column_stack([ECG_I, ECG_II]))
+    live._kwaliteit = None
+    live._toon_kwaliteit(s, "rust")
+    assert "Goed" in live.badges.kwaliteit.text()
     live._ontkoppel()
     assert live.sessie is None
 

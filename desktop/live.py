@@ -25,6 +25,7 @@ from kern.beweging import (
     HOUDING_LIVE_S, HOUDING_STAP_S, LIVE_STAP_S, OMGEKEERD_GRADEN, SEGMENT_S, beweging_nu, houding_nu,
 )
 from kern.dongle import SerieleDongle, SimDongle, poorten, zoek_dongle
+from kern.kwaliteit import KWALITEIT_KLEUREN, kwaliteit_nu
 from kern.lijsten import lees_lijst
 from kern.live_sessie import GEEN_DATA_S, LiveSessie
 from kern.opslag import DATA_ROOT, Deelnemers, Opname, nu
@@ -46,6 +47,7 @@ class LiveScherm(QWidget):
         self.map: str | None = None  # de opname waarin gelogd wordt
         self._beweging: tuple[float, str, pd.Series] | None = None  # activiteit: (tijd, bevestiging, uitkomst)
         self._houding: tuple[float, str, str, float] | None = None  # (tijd, bevestiging, houding, kanteling)
+        self._kwaliteit: tuple[float, dict | None] | None = None  # UC-2: (tijd, uitkomst)
 
         links = QWidget()
         kolom = QVBoxLayout(links)
@@ -316,7 +318,7 @@ class LiveScherm(QWidget):
 
     def _start(self) -> None:
         if self.sessie:
-            self._beweging = self._houding = None
+            self._beweging = self._houding = self._kwaliteit = None
             if not self.sessie.op_achtergrond(self.sessie.start):  # net bezig met de status uitlezen: zo opnieuw
                 QTimer.singleShot(300, self._start)
 
@@ -453,7 +455,33 @@ class LiveScherm(QWidget):
         else:
             self.badges.activiteit.zet(activiteit["activiteit"], activiteit["activiteit"].capitalize(),
                                        f"sd {activiteit['acc_sd']:.3f} g")
+        self._toon_kwaliteit(s, activiteit["activiteit"])
         self.badges.toon()
+
+    def _toon_kwaliteit(self, s: LiveSessie, activiteit: str) -> None:
+        """UC-2 live: kwaliteit van de laatste 20 s ECG, elke 5 s opnieuw (zoals de activiteit), met dezelfde regels
+        als Bekijken. De oorzaak komt uit de live activiteit."""
+        if tuple(s.buffer.kanalen) != ("Ecg1", "Ecg2"):
+            self.badges.kwaliteit.zet("onbekend", "Onbekend", "alleen met 2 ECG-kanalen")
+            return
+        tijd, ecg = s.buffer.lees()
+        if not np.isfinite(tijd).any():
+            return
+        nu_t = float(np.nanmax(tijd))
+        vorige = self._kwaliteit
+        if vorige is None or vorige[1] is None or not 0 <= nu_t - vorige[0] < LIVE_STAP_S:
+            lead_off = s.lead_off_tijd is not None and s.lead_off_tijd >= nu_t - SEGMENT_S
+            self._kwaliteit = (nu_t, kwaliteit_nu(tijd, ecg, s.buffer.fs, lead_off, activiteit))
+        k = self._kwaliteit[1]
+        if k is None:
+            self.badges.kwaliteit.zet("onbekend", f"Nog {SEGMENT_S - np.isfinite(tijd).sum() / s.buffer.fs:.0f} s…", "")
+        elif k["kwaliteit"] == "goed":
+            self.badges.kwaliteit.zet("goed", "Goed", f"{min(k['goed_I'], k['goed_II']):.0%} goede slagen")
+        else:
+            plakker = f"contact {k['plakker']}" if k["plakker"] not in ("geen", "onbekend") else "contact?"
+            detail = {"losse draad": "losse draad", "beweging": "beweging",
+                      "mogelijk slecht elektrodecontact": plakker}.get(k["oorzaak"], "oorzaak onbekend")
+            self.badges.kwaliteit.zet(k["kwaliteit"], k["kwaliteit"].capitalize(), detail)
 
     # --- plots (± 25× per seconde) ---
 
@@ -655,7 +683,8 @@ class _Badge(QLabel):
     """Eén gekleurd label: kop (wat en over welk venster), waarde groot, detail klein."""
 
     KLEUREN = {"rechtop": ("#CDEBF3", TEKST), "liggend": (DONKER, "white"), "rust": ("#CDEBF3", TEKST),
-               "beweging": (ORANJE, "white"), "lopen": ("#8A4B00", "white"), "onbekend": ("#ECEFF1", SUBTIEL)}
+               "beweging": (ORANJE, "white"), "lopen": ("#8A4B00", "white"), "onbekend": ("#ECEFF1", SUBTIEL),
+               **{k: (c, "white") for k, c in KWALITEIT_KLEUREN.items()}}
 
     def __init__(self, kop: str) -> None:
         super().__init__()
@@ -680,8 +709,10 @@ class Badges(QWidget):
         rij.setSpacing(8)
         self.houding = _Badge(f"HOUDING · LAATSTE {HOUDING_LIVE_S} S")
         self.activiteit = _Badge(f"ACTIVITEIT · LAATSTE {SEGMENT_S} S")
+        self.kwaliteit = _Badge(f"KWALITEIT · LAATSTE {SEGMENT_S} S")
         rij.addWidget(self.houding)
         rij.addWidget(self.activiteit)
+        rij.addWidget(self.kwaliteit)
         ouder.installEventFilter(self)
         self.hide()
 

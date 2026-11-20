@@ -15,11 +15,13 @@ signaalkwaliteit beoordeelt (UC-2). Bij elke stap staan de berekening, de drempe
 | Onderbouwing | repo `secu-sense-wp4`: `experiments/uc1_beweging/README.md` (notebooks 01–03) en `experiments/uc2_kwaliteit/README.md` (notebook 01) |
 | Eisen | *Use-cases en requirements Secu-Sense WP4* v0.4 (AI-01 t/m AI-06, HW-06, HW-08) |
 
-**Status (19-11-2026)**
+**Status (20-11-2026)**
 
 - De UC-1-drempel voor de lanyard is getoetst met leave-one-out per opname. De andere drempels zijn startwaarden.
 - UC-2 heeft nog geen enkele handmatige beoordeling. Alle UC-2-drempels zijn daarom gekozen op proxy-labels:
-  de omstandigheid tijdens de opname, niet het oordeel over het ECG zelf.
+  de omstandigheid tijdens de opname, niet het oordeel over het ECG zelf. Op 20-11 zijn de regels getoetst over alle
+  38 opnames en aangescherpt (zie [journal 2026-11-20](journal/2026-11-20-uc2-afronden.md)).
+- UC-2 draait ook live: een badge met de kwaliteit van de laatste 20 s, elke 5 s opnieuw (§5).
 - Alle cijfers komen van **twee deelnemers** (D001 en D002). Er is weinig data met de sticker.
 
 ---
@@ -193,8 +195,9 @@ Zonder R-toppen is `goed` = 0 en `uitslag_mv` leeg.
 ```text
 1. lead_off of rand > 0                         → onbruikbaar, oorzaak "losse draad"
 2. goed_min = min(goed_I, goed_II)
-   geen slagen, of drift_db van I of II > 15 dB → onbruikbaar
-   anders goed_min ≥ 0,9                        → goed (klaar, geen oorzaak)
+   geen slagen, of in I of II: drift_db > 15 dB
+     én goed van die lead < 0,8                 → onbruikbaar
+   anders goed_min ≥ 0,8                        → goed (klaar, geen oorzaak)
    anders goed_min ≥ 0,5                        → matig
    anders                                       → onbruikbaar
 3. Oorzaak bij matig of onbruikbaar (uit UC-1):
@@ -203,7 +206,7 @@ Zonder R-toppen is `goed` = 0 en `uitslag_mv` leeg.
    rust               → "mogelijk slecht elektrodecontact" + welke plakker (zie hieronder)
 ```
 
-**Welke plakker?** In rust wordt een lead "slecht" genoemd als `goed` < 0,9 of `drift_db` > 15 dB. Een storing aan
+**Welke plakker?** In rust wordt een lead "slecht" genoemd als `goed` < 0,8 of `drift_db` > 15 dB. Een storing aan
 één elektrode raakt precies de twee leads waar die elektrode in zit (Einthoven):
 
 | Slechte leads | Plakker | Waarom |
@@ -222,8 +225,8 @@ Zonder R-toppen is `goed` = 0 en `uitslag_mv` leeg.
 | **`rand` 350 mV** | Een losse draad zet het signaal op −379 tot −403 mV; gewone offsets blijven onder ± 85 mV. De grens was eerst 380 mV, maar bij één losse draad stond II op −379,5 mV en viel er net onder. Het meetbereik van ± 400 mV is een aanname. |
 | **Goede slag r ≥ 0,9** | AI-03. Het is een strenge grens: ook bij 20–40% goede slagen is de mediaan-slag nog herkenbaar. |
 | Zwakste kanaal (K2) | UC-4 en UC-5 hebben I én II nodig (AI-09). Lead III telt niet mee voor het label, wel voor de plakker. |
-| **Goed ≥ 0,9, matig ≥ 0,5** | Startwaarden. Bij `goed_min` onder 0,5 zit ≤ 1,3% van de rustsegmenten, tegen 35–40% van de bewegingssegmenten. |
-| **Drift 15 dB** | Een (half) losse plakker gaf +19 tot +47 dB; 95% van alle segmenten zit op ≤ +11 dB. 15 dB ligt ertussen. |
+| **Goed ≥ 0,8, matig ≥ 0,5** | Goed was eerst 0,9. Over alle 38 opnames gaf dat 23% "niet goed" in rust aan de lanyard, bijna altijd door lead I (`goed_I` 0,8–0,9). Met 0,8: 8,7% (lanyard) en 3,2% (sticker), en alle contactproeven blijven herkend (20-11). Bij `goed_min` onder 0,5 zit ≤ 1,3% van de rustsegmenten, tegen 35–40% van de bewegingssegmenten. |
+| **Drift 15 dB, alleen met slechte slagen** | Een (half) losse plakker gaf +19 tot +47 dB; 95% van alle segmenten zit op ≤ +11 dB. 15 dB ligt ertussen. Drift telt sinds 20-11 alleen als de slagen in die lead ook slecht zijn: lead I is klein (± 0,55 mV), en kwam in rust met de sticker net boven 15 dB terwijl de slagen 0,93–1,00 goed waren. Een half losse plakker gaf in de proeven altijd drift én slechte slagen. |
 | Oorzaak uit UC-1, label alleen uit ECG (K3) | "Beweging verklaart, maar veroordeelt niet." Ongeveer een kwart van de segmenten die UC-1 beweging noemt, heeft toch een goed ECG. |
 | Geen hartfrequentie of neurokit2-kwaliteit (K4) | De hartfrequentie is altijd plausibel, ook bij een losse plakker. Van de 963 segmenten die neurokit2 (Zhao 2018) "Unacceptable" noemt, hebben er 591 ≥ 90% goede slagen. |
 | Snoeren verwisseld niet per segment (K5) | Daarvoor is een referentie nodig: een blauwdruk (UC-4 en UC-5). In notebook 01 werden rood↔geel, geel↔groen en rood↔groen herkend (r 0,99–1,00), rood↔zwart niet. |
@@ -248,7 +251,7 @@ Zonder R-toppen is `goed` = 0 en `uitslag_mv` leeg.
 |---|---|---|
 | Activiteit | per segment van 20 s | laatste 20 s, elke 5 s opnieuw |
 | Houding | per segment van 20 s, grens 45° | laatste 5 s, elke 1 s opnieuw, marge ± 5° |
-| Kwaliteit | per segment van 20 s; de kenmerken staan in een cache (`kwaliteit-v1.parquet` in de signalenmap) | nog niet |
+| Kwaliteit | per segment van 20 s; de kenmerken staan in een cache (`kwaliteit-v1.parquet` in de signalenmap) | laatste 20 s, elke 5 s opnieuw (`kwaliteit_nu`); lead-off telt als er in de laatste 20 s een melding was |
 | Bevestiging | keuzelijst; standaard uit de elektrodeplaatsing van de opname: met "lanyard" in de tekst lanyard, anders sticker | idem |
 
 Verandert `kenmerken_segment`, verhoog dan `VERSIE` in `kwaliteit.py`. Anders gebruikt de tool de oude cache.
@@ -272,8 +275,8 @@ Verandert `kenmerken_segment`, verhoog dan `VERSIE` in `kwaliteit.py`. Anders ge
 | filter | 0,5–40 Hz, 3e orde | kwaliteit.py | keuze |
 | slagvenster | −250 / +450 ms | kwaliteit.py | keuze |
 | `goede_slag` | r ≥ 0,9 | kwaliteit.py | AI-03 |
-| `goed` / `matig` | 0,9 / 0,5 | kwaliteit.py | startwaarde |
-| `drift_db` | 15 dB | kwaliteit.py | startwaarde |
+| `goed` / `matig` | 0,8 / 0,5 | kwaliteit.py | proxy-labels 38 opnames (20-11) / startwaarde |
+| `drift_db` | 15 dB, alleen met slechte slagen | kwaliteit.py | startwaarde, regel aangescherpt 20-11 |
 | `rand_mv` | 350 mV | kwaliteit.py | keuze, meetbereik aangenomen |
 
 ---
@@ -286,8 +289,8 @@ Verandert `kenmerken_segment`, verhoog dan `VERSIE` in `kwaliteit.py`. Anders ge
    een tik op de recorder, eindigt dan ook als losse draad. Overweeg een minimale duur of een minimaal aandeel.
 2. **Live houding bij leunen.** De marge zet de grens op 50°, maar leunen over het aanrecht gaf tot 54°. Dat wordt
    dus "liggend" zodra het langer dan een paar seconden duurt.
-3. **Drift in I alleen maakt het segment onbruikbaar**, ook als `goed_min` matig zou geven. Dat is bewust (een
-   driftend kanaal is onbetrouwbaar voor UC-4 en UC-5), maar matig wordt daardoor zeldzamer.
+3. **Drift in I maakt het segment alleen onbruikbaar als de slagen in I ook slecht zijn** (sinds 20-11). Daarvoor
+   gaf drift alleen al "onbruikbaar", wat in rust met de sticker 6,3% vals alarm gaf.
 4. **`ruis_db`, `uitslag_mv` en `gyro_sd` worden berekend maar niet gebruikt** in de regels. Ze dienen alleen ter
    uitleg (AI-14).
 5. **Tool en wp4 lopen uiteen** bij `STAP_AANDEEL` voor de sticker (0,33 tegen 0,41). Gelijktrekken zodra de drempel
@@ -296,12 +299,12 @@ Verandert `kenmerken_segment`, verhoog dan `VERSIE` in `kwaliteit.py`. Anders ge
 
 ### Open punten uit de wp4-notities
 
-1. **Geen beoordelingen voor UC-2.** Alle grenzen zijn gekozen op proxy-labels. Notebook 02 (leave-one-out op
-   beoordelingen) moet ze nog bevestigen of verschuiven.
+1. **Geen beoordelingen voor UC-2.** Alle grenzen zijn gekozen op proxy-labels (op 20-11 over alle 38 opnames
+   getoetst). Notebook 02 (leave-one-out op beoordelingen) moet ze nog bevestigen of verschuiven.
 2. **Zitten met de sticker gaf 56° kanteling** (D002, 07-10), waarschijnlijk door achterover te leunen. Met 45° wordt
    dat "liggend". Misschien moet "rechtop" een hoekbereik worden, met achterover zitten als aparte uitkomst.
-3. **Lanyard in rust:** 15% van de rustsegmenten zit tussen 0,5 en 0,9. Wordt dat "matig, mogelijk slecht
-   contact", dan geeft de lanyard vaak een melding.
+3. **Lanyard in rust:** met goed ≥ 0,8 is nog 8,7% van de rustsegmenten niet goed (was 23% bij 0,9). Bij een
+   melding (UC-3) een langere duur aanhouden.
 4. **Plakkerproeven op één persoon**, 40–60 s per plakker. LL gaf nauwelijks effect: herhalen met LL verder los, en
    bij een tweede deelnemer.
 5. **"Rechtop" ijken per opname** op de loopsegmenten (idee uit ecg-ai 06). Alleen doen als de vaste −x-as
@@ -317,4 +320,5 @@ cd streamlit
 ```
 
 De tests gebruiken synthetische signalen: rust, liggen en lopen; de marge rond 45°; een losse draad; drift die een
-plakker aanwijst; een grote T-golf in I; knippen op tijdstempel. Op 19-11-2026 slaagden ze alle 10.
+plakker aanwijst; drift met goede slagen (blijft goed); een grote T-golf in I; knippen op tijdstempel; de live buffer.
+Op 20-11-2026 slaagden ze alle 12.

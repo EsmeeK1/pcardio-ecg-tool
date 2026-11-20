@@ -82,6 +82,7 @@ class LiveSessie:
         self.acc_buffer = RingBuffer(ACC_BUFFER_S)  # voor beweging en houding (UC-1) en de plot
         self.gyro_buffer = RingBuffer()  # alleen voor de plot
         self.lead_off: bool | None = None
+        self.lead_off_tijd: float | None = None  # laatste pakkettijd met lead-off (UC-2: lead-off in de laatste 20 s)
         self.batterij: int | None = None
         self.logt: bool | None = None  # neemt de recorder zelf op; tijdens streamen uit elk pakket bijgewerkt
         self.info_gelezen: float | None = None  # time.time() van de laatste uitlezing van info (niet tijdens streamen)
@@ -213,6 +214,7 @@ class LiveSessie:
         self.tellers = dict.fromkeys(self.tellers, 0)
         self._samen = p.Samenvoeger(p.STREAM_ADRES, grootte)
         self._vorige_tijd = None
+        self.lead_off_tijd = None
         self._laatste_pakket = time.monotonic()
         self.toestand = "streamen"
         self.dongle.start_stream(grootte, self._stuk)
@@ -367,6 +369,8 @@ class LiveSessie:
                 self.gyro_buffer.voeg_toe(data.tijd, waarden)
             elif config.sensor_id == p.LEAD_OFF_SENSOR:
                 self.lead_off = bool(np.nanmax(waarden) > 0.5)
+                if self.lead_off:
+                    self.lead_off_tijd = data.tijd
             elif config.sensor_id == p.BATTERIJ_SENSOR:
                 self.batterij = int(waarden[-1, 0])
 

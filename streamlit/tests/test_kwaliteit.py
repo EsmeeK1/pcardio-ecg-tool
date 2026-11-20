@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from kern.kwaliteit import (
-    FS, classificeer, kenmerken_per_segment, kenmerken_segment, kwaliteit_per_segment, per_label,
+    FS, classificeer, kenmerken_per_segment, kenmerken_segment, kwaliteit_nu, kwaliteit_per_segment, per_label,
 )
 
 T = np.arange(20 * FS) / FS
@@ -19,6 +19,8 @@ def _ecg(qrs: float, t_golf: float) -> np.ndarray:
 
 I, II = _ecg(0.6, 0.15), _ecg(1.2, 0.3)
 DRIFT = 8 * np.sin(2 * np.pi * 0.15 * T) + 5 * np.sin(2 * np.pi * 0.3 * T)  # mV, onder 0,5 Hz
+# Een half losse plakker: drift én ruis op die elektrode (alleen drift laat de slagen in II goed)
+STORING = DRIFT + np.random.default_rng(0).normal(0, 0.3, len(T))
 
 
 def _label(i: np.ndarray, ii: np.ndarray, lead_off: bool = False, activiteit: str = "rust") -> dict:
@@ -40,9 +42,16 @@ def test_drift_wijst_plakker_aan() -> None:
     assert k["drift_db_III"] < 15 < min(k["drift_db_I"], k["drift_db_II"])
     assert classificeer(k, "rust")["plakker"] == "rood"
     assert _label(I + DRIFT, II)["plakker"] == "geel"  # LA: I + d, III − d
-    assert _label(I, II + DRIFT)["plakker"] == "groen"  # LL: II + d, III + d
+    assert _label(I, II + STORING)["plakker"] == "groen"  # LL: II + d, III + d
     assert _label(I - DRIFT, II - DRIFT, activiteit="beweging") == {
         "kwaliteit": "onbruikbaar", "oorzaak": "beweging", "plakker": "geen"}
+
+
+def test_drift_met_goede_slagen_is_goed() -> None:
+    """Lead I is klein: lichte drift komt in rust boven 15 dB terwijl de slagen goed blijven (20-11: vals alarm)."""
+    k = kenmerken_segment(I + 0.1 * DRIFT, II, False)
+    assert k["drift_db_I"] > 15 and k["goed_I"] >= 0.9
+    assert classificeer(k, "rust")["kwaliteit"] == "goed"
 
 
 def test_toppen_uit_ii_bij_grote_t_golf_in_i() -> None:
@@ -71,3 +80,13 @@ def test_per_label() -> None:
                            ("Plakker half los (RA)", t0 + pd.Timedelta(seconds=20), t0 + pd.Timedelta(seconds=60))])
     assert tabel.loc["Zitten", "goed"] == 1 and tabel.loc["Zitten", "onbruikbaar"] == 0
     assert tabel.loc["Plakker half los (RA)", "plakker rood"] == 2
+
+
+def test_kwaliteit_nu_live_buffer() -> None:
+    tijd = 1000 + T  # ringbuffer: tijden in s, samples × [Ecg1, Ecg2]
+    ecg = np.column_stack([I, II])
+    assert kwaliteit_nu(tijd, ecg, FS, False, "rust")["kwaliteit"] == "goed"
+    assert kwaliteit_nu(tijd, ecg, FS, True, "rust")["oorzaak"] == "losse draad"
+    half = tijd.copy()
+    half[: len(T) // 2] = np.nan  # net gestart: buffer half vol
+    assert kwaliteit_nu(half, ecg, FS, False, "rust") is None
